@@ -1,0 +1,55 @@
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Distribution & Packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Logs & Temporary Files
+*.log
+temp/
+tmp/
+scratch/
+
+# User Audio Recordings / Cache (if applicable)
+*.wav
+*.mp3
+*.flac
+*.ogg
+!sounds/default/*.wav
+!sounds/default/*.mp3

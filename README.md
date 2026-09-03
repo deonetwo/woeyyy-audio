@@ -1,99 +1,154 @@
-# Woeyyy - Real-Time Soundboard, YouTube Music Player & Microphone Enhancer 🎙️🔊🎵
+# Woeyyy Audio Suite 🎙️⚡🤖
 
-Woeyyy is a high-performance, low-latency audio engine, polyphonic soundboard, and streaming center designed for Discord, VoIP, and gaming. It blends live microphone input, soundboard audio clips, and YouTube Music (from web browser or direct streaming) into a Virtual Audio Cable with real-time software gain boost and dynamic soft-knee clipping protection.
-
----
-
-## 🏗️ Multi-Source Audio Architecture
-
-```
-[ 1. Real Mic Input ] ──────> [ Articulation EQ ] ──> [ Digital Mic Booster ] ─┐
-                                                                                │
-[ 2. Soundboard Clips ] ────> [ 48kHz Resampler ] ──> [ Soundboard Volume ] ────┼──> [ Master Soft-Limiter ] ──> [ Virtual Cable ] ──> [ Discord / Game ]
-                                                                                │         (-0.1 dBFS)             (CABLE Input)
-[ 3. YouTube Music Engine ] ─> [ Resampler Buffer ] ─> [ Music Vol & Ducking ] ─┘
-     ├── Mode A: Web Browser WASAPI Loopback (Chrome / Edge / YouTube Music Web)
-     └── Mode B: Built-in YouTube Music Stream Player (yt-dlp & PyAV)
-
-[ Soundboard & Stream Music ] ──────────────────────────────────────────────────> [ Headphone Monitor ] (Self-Listen)
-```
+**Woeyyy** is a high-performance, low-latency audio utility and Discord Hi-Fi streaming engine built with Python. It provides studio-grade microphone digital amplification, soft-knee clipping protection, polyphonic soundboards, and an embedded 48kHz Stereo Opus Discord Voice Bot with slash command integration.
 
 ---
 
-## ⚡ Key Features
+## 🎯 Dual Edition Architecture
 
-- **Polyphonic Soundboard:**
-  - Zero-latency in-memory float32 cache at 48 kHz.
-  - Multi-format support: `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.aac`.
-  - Built-in procedural sound generator (Airhorn MLG, Ba-Dum-Tss, Buzzer, 8-Bit Coin, Level Up, Tada, Siren, Laser) ready to play instantly out-of-the-box.
-  - Global hotkeys (`1`–`8`, F-keys, Numpad) via `pynput` working even when tabbed into games.
-  - Master volume slider and Panic Stop All button.
-- **YouTube Music & Web Browser Stream (into Mic):**
-  - **Mode A (Web Browser Loopback):** Captures YouTube Music audio directly from your browser (Chrome/Edge/Firefox) via Windows WASAPI Loopback and routes it into your microphone.
-  - **Mode B (Built-in Stream Player):** Paste any YouTube or YouTube Music link (`music.youtube.com/watch?v=...`) to stream directly in the app without browser overhead.
-  - **Intelligent Auto-Ducking:** Automatically lowers music volume (e.g. by -12 dB) whenever you speak into the microphone, then smoothly restores it when you stop talking.
-- **Microphone Articulation & Digital Boost:**
-  - Real-time software amplification up to $+36\text{ dB}$ ($63\text{x}$) with click-free parameter smoothing.
-  - 4 Vocal EQ Profiles: *Clear Voice & Articulation*, *Crisp Comms*, *Broadcast Warmth*, and *Flat Bypass*.
-- **Master Soft-Knee Saturation & Limiter:**
-  - Absolute peak clamp at $-0.1\text{ dBFS}$ prevents digital clipping regardless of how loud the music, soundboard, or voice gets.
-- **Headphone Monitor (Self-Listen):**
-  - Listen to soundboard audio and music in your headset with zero feedback echo.
-- **Dual High-FPS VU Meters:**
-  - Real-time telemetry for raw microphone input and master combined output.
+Woeyyy is architected to fit two distinct workflows without compromise:
+
+| Feature / Edition | **Woeyyy Lite** (Recommended) | **Woeyyy Original** (Full Suite) | **Headless Bot** (Cloud / CLI) |
+|---|:---:|:---:|:---:|
+| **Target User** | Everyday gaming & Discord voice comms | Audio enthusiast & Soundboard studio | 24/7 Cloud server (AWS / VPS) |
+| **Interface** | Minimalist Dark Slate (`520x760px`) | Full Multitab Studio (`920x840px`) | Headless Terminal / Daemon |
+| **Mic Booster** | ✅ 0 to +36 dB (~63x amplification) | ✅ 0 to +36 dB with Vocal EQ | ❌ None (Audio Bot only) |
+| **Soft-Knee Limiter** | ✅ Peak clamp at -0.1 dBFS | ✅ Peak clamp at -0.1 dBFS | ❌ None |
+| **Discord Music Bot** | ✅ 48kHz Stereo Opus direct streaming | ❌ Unattached | ✅ Full background daemon |
+| **Favorite Music** | ✅ 1-click star bookmarking & queue | ❌ None | ❌ None |
+| **Soundboard** | ❌ None (Clean & compact) | ✅ 8-slot polyphonic + Hotkeys | ✅ CLI trigger (`sb <name>`) |
+| **Session Persistence**| ✅ Auto-saves devices, gain & favs | ❌ Session-only | ✅ Token config |
+| **One-Click Launcher** | `run_lite.bat` | `run.bat` | `run_bot.bat` |
+
+---
+
+## ✨ Features Breakdown
+
+### 1. 🎤 Real-Time Microphone Booster (Lite & Original)
+- **High-Dynamic Gain:** Clean, click-free software amplification from `0.0 dB` up to `+36.0 dB` (~63x linear amplification).
+- **Master Soft-Knee Limiter:** Dynamic saturation curve with an absolute ceiling at `-0.1 dBFS` prevents digital clipping and ear-piercing distortion.
+- **Hardware Agnostic:** Automatically enumerates and binds to any input and output audio device (e.g. physical microphones, USB headsets, or Virtual Audio Cables).
+- **Session Persistence (Lite):** Automatically remembers your selected input device, output device, gain setting, and toggle states across restarts.
+
+### 2. 🤖 Discord Hi-Fi Voice Bot (Lite & Headless)
+- **Studio 48kHz Opus Streaming:** Direct in-memory UDP streaming straight to Discord voice channels at native 48,000 Hz stereo Opus quality.
+- **Zero Echo / Noise Suppression Cutoff:** Completely bypasses Discord Krisp and noise-cancellation filtering for crystal-clear music playback.
+- **Universal Streaming Support:** Plays directly from YouTube, YouTube Music (`music.youtube.com`), and direct audio streams via `yt-dlp` without local file saving.
+- **Discord Slash Commands (/):** Control the bot directly from any Discord text channel:
+  - `/play <title or url>` — Play or enqueue music with automatic track resolution.
+  - `/skip` — Skip the active song and seamlessly transition to the next queued track.
+  - `/queue` — View the upcoming song queue and requesters.
+  - `/join` — Summon the bot to your current voice channel.
+  - `/leave` — Disconnect the bot from voice.
+  - `/stop` — Stop audio playback.
+
+### 3. ⭐ Favorite Music System (Woeyyy Lite)
+- **1-Click Star Bookmarking:** Click the ⭐ Star button to bookmark the currently streaming track or any typed song title/URL.
+- **Automatic Metadata Resolution:** Resolves real track titles and canonical URLs in the background before saving (no ugly raw URLs in your list).
+- **Quick Queue (`+ Queue`):** Enqueues your favorite track into the bot's queue with one click without interrupting or cutting off the song currently playing.
+- **Persistent Storage:** Stored in `.lite_config.json` so your favorite songs are always ready when you launch the app.
+
+### 4. 🛡️ Kernel-Level Security & Single-Instance Lock
+- **Windows Named Mutex:** Uses `Local\Woeyyy_Audio_Suite_SingleInstance_Mutex` to ensure strictly one active audio session runs at a time, preventing PortAudio hardware conflicts and duplicate Discord Gateway sessions.
+- **Automatic Window Recovery:** Launching a second instance automatically brings the already running application window to the foreground.
+- **SSRF & Dangerous Protocol Protection:** Automatically blocks streaming attempts targeting loopback addresses (`127.0.0.1`, `localhost`), private subnets (`10.0.0.0/8`, `192.168.0.0/16`), cloud metadata endpoints (`169.254.169.254`), and unsafe protocols (`file://`, `pipe:`, `concat:`).
+- **Windows ACL Token Hardening:** Discord token storage permissions are locked via Windows `icacls`, restricting read and write access exclusively to the active user account.
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Requirements & Setup
-Ensure Python 3.10+ is installed:
+### 1. Prerequisites
+- **Operating System:** Windows 10/11 (or Ubuntu 22.04+ for Headless Bot).
+- **Python:** Python 3.10 to 3.14.
+
+### 2. Installation
+Clone the repository and install dependencies:
+
 ```powershell
+git clone https://github.com/dewanto-ar/woeyyy-audio.git
+cd woeyyy-audio
+
+# Create and activate virtual environment
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-*(Ensure [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) is installed to route into Discord/Games).*
+### 3. Running Woeyyy
 
-### 2. Launch the Desktop GUI
-```powershell
-python gui.py
-# or
-python main.py
-```
+Choose the launcher that matches your desired mode:
 
-### 3. Audio Routing for Discord / Games
-1. In **Woeyyy**:
-   - **Microphone Input:** Choose your physical microphone (e.g., *SteelSeries Arctis 1 Wireless*).
-   - **Output Device:** Choose `CABLE Input (VB-Audio Virtual Cable)`.
-   - **Headphone Monitor:** Choose your physical headphones (e.g., *Speakers (SteelSeries Arctis 1)*).
-2. In **Discord / Game Settings**:
-   - **Input Device (Microphone):** Select `CABLE Output (VB-Audio Virtual Cable)`.
-   - **Output Device (Headphones):** Select your normal headphones.
+- **Woeyyy Lite (Compact & Modern):**
+  ```powershell
+  .\run_lite.bat
+  # or
+  python main.py --lite
+  ```
 
----
+- **Woeyyy Original (Full Soundboard Suite):**
+  ```powershell
+  .\run.bat
+  # or
+  python main.py
+  ```
 
-## 🌐 Cara Menggunakan YouTube Music ke dalam Mic
-
-### Cara 1: Web Browser Loopback (YouTube Music Web)
-1. Buka [music.youtube.com](https://music.youtube.com) di Google Chrome, Microsoft Edge, atau browser favorit Anda dan putar lagu.
-2. Di aplikasi Woeyyy, buka tab **🎵 YouTube Music & Web**.
-3. Aktifkan sakelar **Capture Browser Audio (ON/OFF)**.
-4. Musik akan otomatis mengalir ke microphone Discord Anda! Saat Anda berbicara di mic, fitur **Auto-Ducking** akan otomatis mengecilkan volume lagu agar suara Anda tetap terdengar jelas.
-
-### Cara 2: Built-in YouTube Music Stream Player
-1. Salin link lagu dari YouTube atau YouTube Music (contoh: `https://music.youtube.com/watch?v=...`).
-2. Tempelkan link ke kotak input pada tab **🎵 YouTube Music & Web**.
-3. Klik **Stream Track**.
+- **Headless Discord Bot (Terminal Mode):**
+  ```powershell
+  .\run_bot.bat
+  # or
+  python main.py --bot
+  ```
 
 ---
 
-## 🧪 Testing & Verification
+## ☁️ 24/7 Cloud Deployment (AWS EC2 / Lightsail)
 
-To run the automated unit tests:
-```powershell
-# Run DSP and voice profile tests
-python tests/test_dsp.py
+The Discord Voice Bot can be deployed on an AWS EC2 instance or Lightsail VPS to run 24/7 independently of your local computer:
 
-# Run Soundboard and Music Engine tests
-python tests/test_soundboard_and_music.py
+### 1. Install System Dependencies on Ubuntu
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y python3 python3-pip python3-venv git ffmpeg libopus0 libopus-dev
 ```
+
+### 2. Setup Project & Minimal Bot Dependencies
+```bash
+git clone https://github.com/dewanto-ar/woeyyy-audio.git
+cd woeyyy-audio
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements-bot.txt
+```
+
+### 3. Run as a Systemd Service (Auto-Start on Boot)
+Copy the pre-configured [woeyyy-bot.service](woeyyy-bot.service) template:
+
+```bash
+sudo cp woeyyy-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now woeyyy-bot
+```
+
+Monitor live bot logs anytime:
+```bash
+journalctl -u woeyyy-bot -f
+```
+
+---
+
+## 🧪 Automated Testing
+
+Run the test suite to verify DSP processing, audio normalization, security sanitization, and favorite track CRUD:
+
+```powershell
+python -m unittest discover tests
+```
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.

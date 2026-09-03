@@ -363,19 +363,7 @@ class DiscordVoiceBot:
 
             channel = interaction.user.voice.channel
             try:
-                # Verify voice connection is alive; if idle/zombie or disconnected, cleanly reconnect
-                voice_alive = (
-                    self.voice_client
-                    and self.voice_client.is_connected()
-                    and getattr(self.voice_client, "ws", None)
-                    and not getattr(self.voice_client.ws, "closed", True)
-                )
-                if not voice_alive:
-                    if self.voice_client:
-                        try:
-                            await self.voice_client.disconnect(force=True)
-                        except Exception:
-                            pass
+                if not self.voice_client or not self.voice_client.is_connected():
                     self.voice_client = await channel.connect(timeout=15.0, reconnect=True)
                     self.is_in_voice = True
                     self.current_channel_id = channel.id

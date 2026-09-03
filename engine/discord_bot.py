@@ -48,12 +48,18 @@ def ensure_opus_loaded() -> bool:
         "libopus.so",
         "/usr/lib/x86_64-linux-gnu/libopus.so.0",
         "/usr/lib/libopus.so.0",
+        "/usr/local/lib/libopus.so",
         os.path.join(discord_dir, "bin", "libopus-0.x64.dll"),
         os.path.join(discord_dir, "bin", "libopus-0.x86.dll"),
         "libopus-0.x64.dll",
         "libopus-0.dll",
         "opus",
     ]
+
+    import ctypes.util
+    found_lib = ctypes.util.find_library("opus")
+    if found_lib:
+        possible_locations.insert(0, found_lib)
 
     for loc in possible_locations:
         try:
@@ -742,12 +748,20 @@ class DiscordVoiceBot:
             self.is_paused = False
             self._notify_status("PLAYING", track["title"])
             self._notify_status("QUEUE_UPDATED", "")
-        except Exception as e:
-            print(f"[DiscordBot] Failed to start playback: {e}")
+        except discord.opus.OpusNotLoaded:
+            err_msg = "Opus library not found. Run: sudo apt install -y libopus0 libopus-dev"
+            print(f"[DiscordBot] {err_msg}")
             self.is_playing = False
             self.is_paused = False
             self.current_track = None
-            self._notify_status("ERROR", f"Failed to play: {e}")
+            self._notify_status("ERROR", err_msg)
+        except Exception as e:
+            err_msg = str(e) or type(e).__name__
+            print(f"[DiscordBot] Failed to start playback: {err_msg} ({type(e).__name__})")
+            self.is_playing = False
+            self.is_paused = False
+            self.current_track = None
+            self._notify_status("ERROR", f"Failed to play: {err_msg}")
 
     def play_music(self, query_or_url: str):
         """Send song request from GUI or caller into queue/playback pipeline."""

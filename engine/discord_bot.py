@@ -724,11 +724,18 @@ class DiscordVoiceBot:
             if not (sanitized_target.startswith("http://") or sanitized_target.startswith("https://")):
                 sanitized_target = f"ytsearch1:{sanitized_target}"
 
+            # Setup local cache folder
+            cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "cache"))
+            os.makedirs(cache_dir, exist_ok=True)
+
+            opts = dict(YTDL_OPTIONS)
+            opts["outtmpl"] = os.path.join(cache_dir, "%(id)s.%(ext)s")
+            opts["noplaylist"] = True
+
             loop = asyncio.get_event_loop()
-            # Fresh YoutubeDL instance per extraction with download=False for instant live streaming
-            ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
+            ytdl = yt_dlp.YoutubeDL(opts)
             data = await loop.run_in_executor(
-                None, lambda: ytdl.extract_info(sanitized_target, download=False)
+                None, lambda: ytdl.extract_info(sanitized_target, download=True)
             )
 
             if "entries" in data:
@@ -737,9 +744,14 @@ class DiscordVoiceBot:
                     return False, "Track not found.", False, {}
                 data = entries[0]
 
-            stream_url = data.get("url")
-            if not stream_url:
-                return False, "Could not extract audio stream.", False, {}
+            # Resolve local downloaded audio file path
+            filepath = ytdl.prepare_filename(data)
+            if not os.path.exists(filepath):
+                vid_id = data.get("id", "")
+                for fname in os.listdir(cache_dir):
+                    if fname.startswith(vid_id):
+                        filepath = os.path.join(cache_dir, fname)
+                        break
 
             title = data.get("title", query_or_url)
             uploader = data.get("uploader") or data.get("channel") or data.get("artist") or ""
@@ -747,14 +759,14 @@ class DiscordVoiceBot:
             dur_str = f"{sec // 60}:{sec % 60:02d}" if sec else "Live"
 
             track = {
-                "url": stream_url,
+                "filepath": filepath,
+                "url": filepath if os.path.exists(filepath) else data.get("url"),
                 "title": title,
                 "uploader": uploader,
                 "duration_sec": sec,
                 "duration_str": dur_str,
                 "webpage_url": data.get("webpage_url", query_or_url),
                 "requester": requester,
-                "http_headers": data.get("http_headers", {}),
             }
 
             # Check if playback is currently active
@@ -772,7 +784,7 @@ class DiscordVoiceBot:
             return False, str(e), False, {}
 
     async def _async_play_track(self, track: Dict[str, any]):
-        """Play track live via FFmpeg with anti-403 Referer and User-Agent headers."""
+        """Play track on current voice_client (using cached local file or fallback stream)."""
         if not self.voice_client or not self.voice_client.is_connected():
             return
 
@@ -785,27 +797,45 @@ class DiscordVoiceBot:
             self.current_title = track["title"]
 
             ffmpeg_bin = get_ffmpeg_binary()
-            headers = track.get("http_headers") or {}
-            user_agent = headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            referer = headers.get("Referer", "https://www.youtube.com/")
-            before_opts = (
-                "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
-                f' -user_agent "{user_agent}"'
-                f' -referer "{referer}"'
-            )
-            source = discord.FFmpegPCMAudio(
-                track["url"],
-                executable=ffmpeg_bin,
-                before_options=before_opts,
-                options="-vn",
-                stderr=subprocess.PIPE,
-            )
+            audio_src = track.get("filepath") or track.get("url")
+
+            if audio_src and os.path.exists(audio_src):
+                source = discord.FFmpegPCMAudio(
+                    audio_src,
+                    executable=ffmpeg_bin,
+                    options="-vn",
+                    stderr=subprocess.PIPE,
+                )
+            else:
+                headers = track.get("http_headers") or {}
+                user_agent = headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                referer = headers.get("Referer", "https://www.youtube.com/")
+                before_opts = (
+                    "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+                    f' -user_agent "{user_agent}"'
+                    f' -referer "{referer}"'
+                )
+                source = discord.FFmpegPCMAudio(
+                    audio_src,
+                    executable=ffmpeg_bin,
+                    before_options=before_opts,
+                    options="-vn",
+                    stderr=subprocess.PIPE,
+                )
             transformer = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             def _after_play(error):
                 if error:
                     print(f"[DiscordBot] Playback error: {error}")
                     self._notify_status("ERROR", f"Playback error: {error}")
+
+                # Auto-cleanup cached file after song completes to preserve storage space
+                try:
+                    cached_f = track.get("filepath")
+                    if cached_f and os.path.exists(cached_f):
+                        os.remove(cached_f)
+                except Exception:
+                    pass
 
                 # Check if there are songs waiting in the queue
                 if self.queue and self.voice_client and self.voice_client.is_connected():

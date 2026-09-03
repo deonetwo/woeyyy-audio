@@ -123,6 +123,16 @@ YTDL_OPTIONS = {
     },
 }
 
+# Automatically bind cookies.txt if present to authenticate with YouTube
+COOKIE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "cookies.txt"))
+if os.path.exists(COOKIE_PATH):
+    YTDL_OPTIONS["cookiefile"] = COOKIE_PATH
+    YTDL_OPTIONS["extractor_args"] = {
+        "youtube": {
+            "player_client": ["web", "android"],
+        }
+    }
+
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",

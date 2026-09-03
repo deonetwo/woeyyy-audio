@@ -57,6 +57,7 @@ scratch/
 # Environment & Discord Bot Private Token
 .env
 .env.*
+cookies.txt
 .bot_config.json
 .lite_config.json
 .agents/skills/custom-skill/SKILL.md

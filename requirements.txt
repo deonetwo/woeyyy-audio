@@ -1,12 +1,11 @@
-# Core Audio & DSP Engine (Priority 1)
+# Core Audio & DSP Engine (Mic Boost, Equalizer, Soft Limiter)
 numpy>=1.24.0
 scipy>=1.10.0
 sounddevice>=0.4.6
 customtkinter>=6.0.0
+pillow>=10.0.0
 
-# Soundboard & Global Hotkeys (Future Roadmap)
-# soundfile>=0.12.1
-# pynput>=1.7.6
-
-# Desktop GUI (Future Roadmap)
-# customtkinter>=5.2.0
+# Discord Voice Bot & Hi-Fi Audio Streaming (48kHz Stereo Opus via PyNaCl)
+discord.py[voice]>=2.3.0
+yt-dlp>=2024.0.0
+imageio-ffmpeg>=0.5.0

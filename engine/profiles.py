@@ -29,7 +29,7 @@ class SoundProfile:
 SOUND_PROFILES: Dict[str, SoundProfile] = {
     "clear_voice": SoundProfile(
         key="clear_voice",
-        name="🌟 Clear Voice & Articulation (Default)",
+        name="Clear Voice & Articulation (Default)",
         description="Cuts muddy bass boominess (<100Hz), scoops boxy mids (320Hz), and boosts consonant clarity (3.2kHz).",
         bands=[
             # 1. High-Pass: eliminates desk thumps, AC rumble, and muddy proximity effect
@@ -44,7 +44,7 @@ SOUND_PROFILES: Dict[str, SoundProfile] = {
     ),
     "crisp_comms": SoundProfile(
         key="crisp_comms",
-        name="🎮 Crisp Comms & Gaming",
+        name="Crisp Comms & Gaming",
         description="Aggressive anti-rumble with boosted vocal presence to cut through loud game audio and explosions.",
         bands=[
             EQBand(filter_type="highpass", freq=150.0, gain_db=0.0, q=0.707),
@@ -55,7 +55,7 @@ SOUND_PROFILES: Dict[str, SoundProfile] = {
     ),
     "broadcast_warm": SoundProfile(
         key="broadcast_warm",
-        name="🎙️ Broadcast Warmth (Podcast)",
+        name="Broadcast Warmth (Podcast)",
         description="Subtle low-end body with balanced vocal presence for a rich, intimate radio tone.",
         bands=[
             EQBand(filter_type="highpass", freq=70.0, gain_db=0.0, q=0.707),
@@ -66,7 +66,7 @@ SOUND_PROFILES: Dict[str, SoundProfile] = {
     ),
     "flat": SoundProfile(
         key="flat",
-        name="⚪ Flat (Bypass / Direct Mic)",
+        name="Flat (Bypass / Direct Mic)",
         description="Raw microphone audio without any equalization coloring.",
         bands=[],
     ),

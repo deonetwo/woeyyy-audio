@@ -4,6 +4,7 @@ Core Engine Package
 """
 
 from .audio_engine import AudioDeviceManager, MicBoostEngine
+from .discord_bot import DiscordVoiceBot
 from .dsp import (
     BiquadFilter,
     ParametricEQChain,
@@ -17,6 +18,7 @@ from .profiles import DEFAULT_PROFILE_KEY, SOUND_PROFILES, SoundProfile
 __all__ = [
     "MicBoostEngine",
     "AudioDeviceManager",
+    "DiscordVoiceBot",
     "SoftLimiter",
     "BiquadFilter",
     "ParametricEQChain",

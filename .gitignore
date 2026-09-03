@@ -53,3 +53,7 @@ scratch/
 *.ogg
 !sounds/default/*.wav
 !sounds/default/*.mp3
+
+# Discord Bot Private Token & Config
+.bot_config.json
+.agents/skills/custom-skill/SKILL.md

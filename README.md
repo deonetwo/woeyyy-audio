@@ -1,28 +1,46 @@
-# Woeyyy - Real-Time Soundboard & Microphone Enhancer 🎙️🔊
+# Woeyyy - Real-Time Soundboard, YouTube Music Player & Microphone Enhancer 🎙️🔊🎵
 
-Woeyyy is a high-performance, low-latency audio engine and soundboard designed for Discord, VoIP, and gaming. It blends live microphone input with soundboard audio into a Virtual Audio Cable with real-time software gain boost and dynamic soft-knee clipping protection.
-
----
-
-## 🏗️ Architecture
-
-```
-[ Real Mic Input ] ──> [ Mic Boost & Limiter Engine ] ──┐
-                                                         ├──> [ Python Blend Engine ] ──> [ Virtual Cable ] ──> [ Discord / VoIP / Game ]
-                       [ Soundboard Audio Files ] ───────┘
-```
+Woeyyy is a high-performance, low-latency audio engine, polyphonic soundboard, and streaming center designed for Discord, VoIP, and gaming. It blends live microphone input, soundboard audio clips, and YouTube Music (from web browser or direct streaming) into a Virtual Audio Cable with real-time software gain boost and dynamic soft-knee clipping protection.
 
 ---
 
-## ⚡ Priority 1 Features (Current Release)
+## 🏗️ Multi-Source Audio Architecture
 
-- **Vectorized Digital Gain Multiplier:** Real-time software amplification from $-20\text{ dB}$ to $+40\text{ dB}$ with sample-accurate linear parameter smoothing (eliminates clicks/pops when sliders move).
-- **Soft-Knee Saturation & Limiter:**
-  - $100\%$ bit-exact transparency below threshold ($-1.0\text{ dBFS}$).
-  - $C^1$-continuous hyperbolic tangent ($\tanh$) soft saturation above threshold.
-  - Absolute peak ceiling clamp ($-0.1\text{ dBFS}$ / $0.988$) preventing harsh digital distortion.
-- **Ultra-Low Latency:** Optimized for small buffer block sizes ($128$ to $256$ frames at $48\text{ kHz}$ / $44.1\text{ kHz}$), running DSP calculations in $\approx 0.012\text{ ms}$ ($<0.5\%$ of the $2.6\text{ ms}$ buffer budget).
-- **Live Terminal VU Meter:** Real-time visual telemetry for pre-boost mic level, gain value, limiter engagement status, and final output level.
+```
+[ 1. Real Mic Input ] ──────> [ Articulation EQ ] ──> [ Digital Mic Booster ] ─┐
+                                                                                │
+[ 2. Soundboard Clips ] ────> [ 48kHz Resampler ] ──> [ Soundboard Volume ] ────┼──> [ Master Soft-Limiter ] ──> [ Virtual Cable ] ──> [ Discord / Game ]
+                                                                                │         (-0.1 dBFS)             (CABLE Input)
+[ 3. YouTube Music Engine ] ─> [ Resampler Buffer ] ─> [ Music Vol & Ducking ] ─┘
+     ├── Mode A: Web Browser WASAPI Loopback (Chrome / Edge / YouTube Music Web)
+     └── Mode B: Built-in YouTube Music Stream Player (yt-dlp & PyAV)
+
+[ Soundboard & Stream Music ] ──────────────────────────────────────────────────> [ Headphone Monitor ] (Self-Listen)
+```
+
+---
+
+## ⚡ Key Features
+
+- **Polyphonic Soundboard:**
+  - Zero-latency in-memory float32 cache at 48 kHz.
+  - Multi-format support: `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.aac`.
+  - Built-in procedural sound generator (Airhorn MLG, Ba-Dum-Tss, Buzzer, 8-Bit Coin, Level Up, Tada, Siren, Laser) ready to play instantly out-of-the-box.
+  - Global hotkeys (`1`–`8`, F-keys, Numpad) via `pynput` working even when tabbed into games.
+  - Master volume slider and Panic Stop All button.
+- **YouTube Music & Web Browser Stream (into Mic):**
+  - **Mode A (Web Browser Loopback):** Captures YouTube Music audio directly from your browser (Chrome/Edge/Firefox) via Windows WASAPI Loopback and routes it into your microphone.
+  - **Mode B (Built-in Stream Player):** Paste any YouTube or YouTube Music link (`music.youtube.com/watch?v=...`) to stream directly in the app without browser overhead.
+  - **Intelligent Auto-Ducking:** Automatically lowers music volume (e.g. by -12 dB) whenever you speak into the microphone, then smoothly restores it when you stop talking.
+- **Microphone Articulation & Digital Boost:**
+  - Real-time software amplification up to $+36\text{ dB}$ ($63\text{x}$) with click-free parameter smoothing.
+  - 4 Vocal EQ Profiles: *Clear Voice & Articulation*, *Crisp Comms*, *Broadcast Warmth*, and *Flat Bypass*.
+- **Master Soft-Knee Saturation & Limiter:**
+  - Absolute peak clamp at $-0.1\text{ dBFS}$ prevents digital clipping regardless of how loud the music, soundboard, or voice gets.
+- **Headphone Monitor (Self-Listen):**
+  - Listen to soundboard audio and music in your headset with zero feedback echo.
+- **Dual High-FPS VU Meters:**
+  - Real-time telemetry for raw microphone input and master combined output.
 
 ---
 
@@ -34,7 +52,7 @@ Ensure Python 3.10+ is installed:
 pip install -r requirements.txt
 ```
 
-*(Optional for routing into Discord/Games without hearing yourself: install [VB-Audio Virtual Cable](https://vb-audio.com/Cable/))*
+*(Ensure [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) is installed to route into Discord/Games).*
 
 ### 2. Launch the Desktop GUI
 ```powershell
@@ -43,60 +61,39 @@ python gui.py
 python main.py
 ```
 
-### 3. Launch the Terminal/CLI Harness (Optional)
-If you prefer running inside a headless shell or terminal:
-```powershell
-python run_mic_boost.py
-# or
-python main.py --cli
-```
+### 3. Audio Routing for Discord / Games
+1. In **Woeyyy**:
+   - **Microphone Input:** Choose your physical microphone (e.g., *SteelSeries Arctis 1 Wireless*).
+   - **Output Device:** Choose `CABLE Input (VB-Audio Virtual Cable)`.
+   - **Headphone Monitor:** Choose your physical headphones (e.g., *Speakers (SteelSeries Arctis 1)*).
+2. In **Discord / Game Settings**:
+   - **Input Device (Microphone):** Select `CABLE Output (VB-Audio Virtual Cable)`.
+   - **Output Device (Headphones):** Select your normal headphones.
 
 ---
 
-## 🎛️ Controls & Features
+## 🌐 Cara Menggunakan YouTube Music ke dalam Mic
 
-### Sound Profiles & Voice Articulation EQ
-- **🌟 Clear Voice & Articulation (Default):** Specifically engineered to eliminate muddy bass boominess, cut boxy microphone resonance, and bring speech consonants (T, S, K, P) forward for crystal-clear communication.
-  - **$100\text{ Hz}$ High-Pass Filter:** Cuts desk thumps, mechanical rumble, and muddy bass proximity effect ($-15.7\text{ dB}$ sub-bass cut).
-  - **$320\text{ Hz}$ Mud Scoop ($-4.0\text{ dB}$):** Removes hollow, muffled "cardboard box" nasal sound.
-  - **$3.2\text{ kHz}$ Articulation Boost ($+4.5\text{ dB}$):** Sharpens vocal clarity, presence, and diction.
-  - **$8.5\text{ kHz}$ Air Shelf ($+2.5\text{ dB}$):** Adds a clean, open studio sheen.
-- **🎮 Crisp Comms & Gaming:** Aggressive low-cut ($150\text{ Hz}$) and heavy speech core boost ($+6.0\text{ dB}$) to penetrate through loud in-game explosions and gunfire.
-- **🎙️ Broadcast Warmth:** Rich, intimate radio tone with warm low-mid body.
-- **⚪ Flat (Bypass):** Pure, uncolored microphone signal.
+### Cara 1: Web Browser Loopback (YouTube Music Web)
+1. Buka [music.youtube.com](https://music.youtube.com) di Google Chrome, Microsoft Edge, atau browser favorit Anda dan putar lagu.
+2. Di aplikasi Woeyyy, buka tab **🎵 YouTube Music & Web**.
+3. Aktifkan sakelar **Capture Browser Audio (ON/OFF)**.
+4. Musik akan otomatis mengalir ke microphone Discord Anda! Saat Anda berbicara di mic, fitur **Auto-Ducking** akan otomatis mengecilkan volume lagu agar suara Anda tetap terdengar jelas.
 
-### Desktop GUI
-- **Sound Profile Selector:** One-click dropdown to instantly switch voice EQ curves with live acoustic descriptions.
-- **Microphone & Output Selectors:** Clean WASAPI dropdowns listing physical mics and Virtual Audio Cables without duplicate clutter.
-- **Microphone Boost Slider:** Smooth gain slider from $-10\text{ dB}$ to $+30\text{ dB}$ ($0.3\text{x}$ to $31.6\text{x}$ amplification) with quick presets (`Flat`, `+6dB`, `+12dB`, `+18dB`, `+24dB`).
-- **Live Dual VU Meters:** Animated high-framerate level meters with green/yellow/red audio thresholds and decaying peak-hold indicators for both raw mic and boosted output.
-- **Dynamic Soft-Limiter Switch:** Soft-saturation protection prevents harsh digital clipping when screaming or speaking loudly.
-- **Mute Toggle:** Instant click-free microphone muting.
-
-### Terminal Mode Hotkeys
-| Key | Action |
-|---|---|
-| `+` / `=` | Increase Gain by $+1\text{ dB}$ |
-| `-` / `_` | Decrease Gain by $-1\text{ dB}$ |
-| `]` | Increase Gain by $+5\text{ dB}$ |
-| `[` | Decrease Gain by $-5\text{ dB}$ |
-| `P` | Cycle Sound Profile (Clear Voice, Comms, Warm, Flat) |
-| `L` | Toggle Soft-Limiter ON / OFF |
-| `M` | Toggle Mute ON / OFF |
-| `Q` / `Ctrl+C` | Exit Cleanly |
+### Cara 2: Built-in YouTube Music Stream Player
+1. Salin link lagu dari YouTube atau YouTube Music (contoh: `https://music.youtube.com/watch?v=...`).
+2. Tempelkan link ke kotak input pada tab **🎵 YouTube Music & Web**.
+3. Klik **Stream Track**.
 
 ---
 
 ## 🧪 Testing & Verification
-To run the automated DSP unit tests and latency benchmark:
+
+To run the automated unit tests:
 ```powershell
+# Run DSP and voice profile tests
 python tests/test_dsp.py
+
+# Run Soundboard and Music Engine tests
+python tests/test_soundboard_and_music.py
 ```
-
----
-
-## 🗺️ Roadmap
-- [x] **Priority 1: Real-time Microphone Boost & Limiter Engine**
-- [ ] **Priority 2: Soundboard Audio Blend Engine** (Seamlessly mixing `.wav` / `.mp3` audio files into live stream)
-- [ ] **Priority 3: Global Hotkeys** (Registering system-wide hotkeys while gaming using `pynput`)
-- [ ] **Priority 4: Modern Desktop GUI** (Sleek dark-mode interface with sliders, VU visualizer, and soundboard pads)

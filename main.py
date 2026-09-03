@@ -12,11 +12,19 @@ def main():
     parser.add_argument(
         "--cli",
         action="store_true",
-        help="Run in interactive terminal/CLI mode instead of the desktop GUI",
+        help="Run interactive Microphone Enhancer CLI in terminal",
+    )
+    parser.add_argument(
+        "--bot",
+        action="store_true",
+        help="Run headless Discord Hi-Fi Voice Bot in lightweight terminal mode",
     )
     args = parser.parse_args()
 
-    if args.cli:
+    if args.bot:
+        from bot_cli import main as run_bot_cli
+        run_bot_cli()
+    elif args.cli:
         from run_mic_boost import run_interactive_cli
         run_interactive_cli()
     else:

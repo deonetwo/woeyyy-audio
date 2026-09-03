@@ -23,8 +23,16 @@ from discord.ext import commands
 import imageio_ffmpeg
 import yt_dlp
 
+from engine.security import (
+    secure_file_permissions,
+    mask_token,
+    sanitize_audio_target,
+    is_safe_soundboard_path,
+)
+
 # Path to local token configuration
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".bot_config.json"))
+
 
 
 def ensure_opus_loaded() -> bool:
@@ -77,7 +85,7 @@ YTDL_OPTIONS = {
     "outtmpl": "%(extractor)s-%(id)s-%(title)s.%(ext)s",
     "restrictfilenames": True,
     "noplaylist": True,
-    "nocheckcertificate": True,
+    "nocheckcertificate": False,
     "ignoreerrors": False,
     "logtostderr": False,
     "quiet": True,
@@ -122,11 +130,12 @@ def load_saved_token() -> str:
 
 
 def save_token(token: str):
-    """Save Discord Bot Token to local config file."""
+    """Save Discord Bot Token to local config file and lock ACL permissions."""
     try:
         data = {"bot_token": token.strip()}
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+        secure_file_permissions(CONFIG_PATH)
     except Exception as e:
         print(f"[DiscordBot] Failed to save token: {e}")
 
@@ -539,12 +548,16 @@ class DiscordVoiceBot:
         """
         try:
             target = normalize_youtube_url(query_or_url)
-            if not (target.startswith("http://") or target.startswith("https://")):
-                target = f"ytsearch1:{target}"
+            is_safe, sanitized_target, reason = sanitize_audio_target(target)
+            if not is_safe:
+                return False, f"Keamanan: Tautan ditolak ({reason})", False, {}
+
+            if not (sanitized_target.startswith("http://") or sanitized_target.startswith("https://")):
+                sanitized_target = f"ytsearch1:{sanitized_target}"
 
             loop = asyncio.get_event_loop()
             data = await loop.run_in_executor(
-                None, lambda: self.ytdl.extract_info(target, download=False)
+                None, lambda: self.ytdl.extract_info(sanitized_target, download=False)
             )
 
             if "entries" in data:
@@ -675,6 +688,10 @@ class DiscordVoiceBot:
 
         if not os.path.exists(file_path):
             print(f"[DiscordBot] Sound file not found: {file_path}")
+            return
+
+        if not is_safe_soundboard_path(file_path):
+            print(f"[Security] Blocked unauthorized sound path traversal: {file_path}")
             return
 
         display_name = title or os.path.splitext(os.path.basename(file_path))[0].title()

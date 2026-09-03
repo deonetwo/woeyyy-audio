@@ -14,6 +14,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
 from engine.discord_bot import DiscordVoiceBot, load_saved_token, save_token
+from engine.security import SingleInstanceLock, mask_token, is_safe_soundboard_path
 
 
 def status_callback(status: str, detail: str):
@@ -68,24 +69,31 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
-    print_banner()
+    lock = SingleInstanceLock()
+    if not lock.acquire():
+        print("\n[Security Alert] Another session of Woeyyy is already active on this system.")
+        print("                 Only one instance is permitted to prevent hardware/token conflicts.")
+        SingleInstanceLock.focus_existing_window("Woeyyy")
+        sys.exit(0)
 
-    # 1. Load or prompt for bot token
-    token = load_saved_token()
-    if token:
-        masked = token[:10] + "..." + token[-6:] if len(token) > 16 else "******"
-        print(f"[*] Found saved Bot Token: {masked}")
-        ans = input("    Press Enter to use this token, or type a new one: ").strip()
-        if ans:
-            token = ans
+    try:
+        print_banner()
+
+        # 1. Load or prompt for bot token
+        token = load_saved_token()
+        if token:
+            print(f"[*] Found saved Bot Token: {mask_token(token)}")
+            ans = input("    Press Enter to use this token, or type a new one: ").strip()
+            if ans:
+                token = ans
+                save_token(token)
+        else:
+            print("[!] No saved bot token found.")
+            token = input("    Enter your Discord Bot Token: ").strip()
+            if not token:
+                print("[ERROR] Token cannot be empty. Exiting.")
+                sys.exit(1)
             save_token(token)
-    else:
-        print("[!] No saved bot token found.")
-        token = input("    Enter your Discord Bot Token: ").strip()
-        if not token:
-            print("[ERROR] Token cannot be empty. Exiting.")
-            sys.exit(1)
-        save_token(token)
 
     # 2. Instantiate and start bot
     bot = DiscordVoiceBot(on_status_change=status_callback)
@@ -210,6 +218,9 @@ def main():
                     continue
                 sounds_dir = os.path.join(BASE_DIR, "sounds")
                 sound_file = os.path.join(sounds_dir, f"{arg.lower()}.wav")
+                if not is_safe_soundboard_path(sound_file, [sounds_dir]):
+                    print(f"[Security] Blocked unauthorized sound path: {sound_file}")
+                    continue
                 if os.path.exists(sound_file):
                     bot.play_sound(sound_file, arg.title())
                 else:
@@ -221,6 +232,7 @@ def main():
     finally:
         print("\n[*] Disconnecting bot and cleaning up...")
         bot.stop()
+        lock.release()
         print("[+] Bot stopped safely. Goodbye!")
 
 

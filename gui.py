@@ -23,6 +23,7 @@ from engine.profiles import DEFAULT_PROFILE_KEY, SOUND_PROFILES
 from engine.soundboard import GlobalHotkeyManager, ProceduralSoundGenerator
 from engine.music_engine import LoopbackCaptureWorker
 from engine.discord_bot import DiscordVoiceBot, load_saved_token
+from engine.security import SingleInstanceLock
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -1864,8 +1865,17 @@ class WoeyyyApp(ctk.CTk):
 
 
 def main():
-    app = WoeyyyApp()
-    app.mainloop()
+    lock = SingleInstanceLock()
+    if not lock.acquire():
+        print("[Security] Another session of Woeyyy is already running. Switching focus to active window...")
+        SingleInstanceLock.focus_existing_window("Woeyyy")
+        sys.exit(0)
+
+    try:
+        app = WoeyyyApp()
+        app.mainloop()
+    finally:
+        lock.release()
 
 
 if __name__ == "__main__":

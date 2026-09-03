@@ -28,6 +28,7 @@ sys.path.insert(0, BASE_DIR)
 from engine.audio_engine import AudioDeviceManager, MicBoostEngine
 from engine.profiles import DEFAULT_PROFILE_KEY
 from engine.discord_bot import DiscordVoiceBot, load_saved_token, save_token
+from engine.security import SingleInstanceLock, secure_file_permissions, mask_token
 
 # CustomTkinter theme
 ctk.set_appearance_mode("Dark")
@@ -84,10 +85,11 @@ def load_lite_config() -> dict:
 
 
 def save_lite_config(cfg: dict):
-    """Save persistent user settings for Woeyyy Lite."""
+    """Save persistent user settings for Woeyyy Lite and lock file permissions."""
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
+        secure_file_permissions(CONFIG_FILE)
     except Exception as e:
         print(f"[Lite] Notice: could not save config: {e}")
 
@@ -214,8 +216,9 @@ class WoeyyyLiteApp(ctk.CTk):
     Minimalist two-section interface: Mic Enhancer (ON/OFF) + Discord Bot (ON/OFF).
     """
 
-    def __init__(self):
+    def __init__(self, lock: Optional[SingleInstanceLock] = None):
         super().__init__()
+        self.lock = lock
 
         # Load Saved State
         self.cfg = load_lite_config()
@@ -1008,12 +1011,23 @@ class WoeyyyLiteApp(ctk.CTk):
                 self.bot.stop()
         except Exception:
             pass
+        if self.lock:
+            self.lock.release()
         self.destroy()
 
 
 def main():
-    app = WoeyyyLiteApp()
-    app.mainloop()
+    lock = SingleInstanceLock()
+    if not lock.acquire():
+        print("[Security] Another session of Woeyyy is already running. Switching focus to active window...")
+        SingleInstanceLock.focus_existing_window("Woeyyy")
+        sys.exit(0)
+
+    try:
+        app = WoeyyyLiteApp(lock=lock)
+        app.mainloop()
+    finally:
+        lock.release()
 
 
 if __name__ == "__main__":

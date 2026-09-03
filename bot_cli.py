@@ -86,23 +86,26 @@ def main():
         SingleInstanceLock.focus_existing_window("Woeyyy")
         sys.exit(0)
 
+    bot = None
     try:
         print_banner()
 
         # 1. Resolve Bot Token
         token = args.token or os.environ.get("DISCORD_BOT_TOKEN")
-        if not token:
+        if not token or token.strip() == "YOUR_BOT_TOKEN_HERE":
             token = load_saved_token()
 
-        if not token:
+        if not token or token.strip() == "YOUR_BOT_TOKEN_HERE":
             if is_daemon:
-                print("[ERROR] Bot token not provided. Pass --token <token> or set DISCORD_BOT_TOKEN environment variable.")
+                print("[ERROR] Bot token not provided. Please set your real Discord Bot Token:")
+                print("        1. Edit /etc/systemd/system/woeyyy-bot.service and set Environment=\"DISCORD_BOT_TOKEN=...\"")
+                print("        2. Or pass --token <your_token> in ExecStart")
                 sys.exit(1)
             else:
                 print("[!] No saved bot token found.")
                 token = input("    Enter your Discord Bot Token: ").strip()
-                if not token:
-                    print("[ERROR] Token cannot be empty. Exiting.")
+                if not token or token == "YOUR_BOT_TOKEN_HERE":
+                    print("[ERROR] Token cannot be empty or placeholder. Exiting.")
                     sys.exit(1)
                 save_token(token)
         else:
@@ -268,10 +271,12 @@ def main():
                 print(f"[!] Unknown command '{cmd}'. Type 'help' for available commands.")
 
     finally:
-        print("\n[*] Disconnecting bot and cleaning up...")
-        bot.stop()
-        lock.release()
-        print("[+] Bot stopped safely. Goodbye!")
+        if bot is not None:
+            print("\n[*] Disconnecting bot and cleaning up...")
+            bot.stop()
+            print("[+] Bot stopped safely. Goodbye!")
+        if lock is not None:
+            lock.release()
 
 
 if __name__ == "__main__":

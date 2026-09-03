@@ -63,10 +63,15 @@ def main():
             import customtkinter  # noqa: F401
             from gui import main as run_gui
             run_gui()
-        except ImportError:
-            print("[INFO] customtkinter not found. Falling back to terminal CLI mode...")
-            from run_mic_boost import run_interactive_cli
-            run_interactive_cli()
+        except (ImportError, Exception):
+            # On Linux / headless cloud servers without display, run Discord Bot CLI
+            if sys.platform != "win32" or not os.environ.get("DISPLAY"):
+                from bot_cli import main as run_bot_cli
+                run_bot_cli()
+            else:
+                print("[INFO] customtkinter not found. Falling back to terminal CLI mode...")
+                from run_mic_boost import run_interactive_cli
+                run_interactive_cli()
 
 
 if __name__ == "__main__":

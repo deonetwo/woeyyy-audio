@@ -330,7 +330,7 @@ class DiscordVoiceBot:
         async def cmd_join(interaction: discord.Interaction):
             if not interaction.user.voice or not interaction.user.voice.channel:
                 await interaction.response.send_message(
-                    "⚠️ Kamu harus masuk ke salah satu Voice Channel dulu!", ephemeral=True
+                    "You must be in a voice channel to use this command.", ephemeral=True
                 )
                 return
 
@@ -346,14 +346,14 @@ class DiscordVoiceBot:
             self.is_in_voice = True
             self.current_channel_id = channel.id
             self._notify_status("VOICE_CONNECTED", channel.name)
-            await interaction.followup.send(f"🔊 **Tersambung ke Voice Channel:** `#{channel.name}`")
+            await interaction.followup.send(f"Connected to `#{channel.name}`.")
 
         @bot.tree.command(name="play", description="Putar lagu dari YouTube / YouTube Music atau tambahkan ke antrean")
         @app_commands.describe(query="Judul lagu, link YouTube, atau link YouTube Music")
         async def cmd_play(interaction: discord.Interaction, query: str):
             if not interaction.user.voice or not interaction.user.voice.channel:
                 await interaction.response.send_message(
-                    "⚠️ Kamu harus masuk ke salah satu Voice Channel dulu!",
+                    "You must be in a voice channel to use this command.",
                     ephemeral=True,
                 )
                 return
@@ -373,8 +373,11 @@ class DiscordVoiceBot:
                     self.current_channel_id = channel.id
             except Exception as e:
                 print(f"[DiscordBot] Error connecting to voice channel: {e}")
-                await interaction.followup.send(f"❌ Gagal tersambung ke Voice Channel: {e}")
+                await interaction.followup.send(f"Failed to connect to voice channel: {e}")
                 return
+
+            # Send immediate feedback so Discord's "Woeyyy is thinking..." disappears in 0.1s!
+            msg_handle = await interaction.followup.send(f"Searching for `{query[:60]}`...")
 
             self._notify_status("SEARCHING", f"Loading: {query[:35]}...")
 
@@ -382,29 +385,32 @@ class DiscordVoiceBot:
             success, msg, is_queued, track = await self._async_enqueue_or_play(query, requester=requester_name)
 
             if not success:
-                await interaction.followup.send(f"❌ {msg}")
+                await msg_handle.edit(content=f"Error: {msg}")
                 return
 
             title = track.get("title", query)
             dur = track.get("duration_str", "Live")
+            uploader = track.get("uploader", "")
+            url = track.get("webpage_url", "")
+
+            link_part = f"[{title}]({url})" if url else f"**{title}**"
+            uploader_part = f" by **{uploader}**" if uploader else ""
+            dur_part = f" (` {dur} `)" if dur else ""
 
             if is_queued:
                 pos = len(self.queue)
-                await interaction.followup.send(
-                    f"➕ **Ditambahkan ke Antrean (#{pos}):** `{title}` [{dur}]\n"
-                    f"👤 *Diminta oleh:* {requester_name}"
+                await msg_handle.edit(
+                    content=f"Added {link_part}{uploader_part}{dur_part} to the queue at position #{pos}."
                 )
             else:
-                await interaction.followup.send(
-                    f"🎵 **Sedang Memutar:** `{title}` [{dur}]\n"
-                    f"✨ *Kualitas: 48kHz Stereo Opus HD (Bebas Krisp / Noise Suppression)*\n"
-                    f"👤 *Diminta oleh:* {requester_name}"
+                await msg_handle.edit(
+                    content=f"Added {link_part}{uploader_part}{dur_part} to begin playing."
                 )
 
         @bot.tree.command(name="skip", description="Lewati lagu yang sedang diputar dan putar lagu berikutnya di antrean")
         async def cmd_skip(interaction: discord.Interaction):
             if not self.is_playing and not self.is_paused:
-                await interaction.response.send_message("⚠️ Tidak ada lagu yang sedang diputar.", ephemeral=True)
+                await interaction.response.send_message("Nothing is currently playing.", ephemeral=True)
                 return
 
             old_title = self.current_title
@@ -412,39 +418,62 @@ class DiscordVoiceBot:
             self.skip()
 
             if next_track:
+                next_title = next_track.get("title", "Next Track")
+                next_url = next_track.get("webpage_url", "")
+                next_dur = next_track.get("duration_str", "Live")
+                next_uploader = next_track.get("uploader", "")
+
+                next_link = f"[{next_title}]({next_url})" if next_url else f"**{next_title}**"
+                next_up = f" by **{next_uploader}**" if next_uploader else ""
+                next_dur_part = f" (` {next_dur} `)" if next_dur else ""
+
                 await interaction.response.send_message(
-                    f"⏭️ **Lagu dilewati:** `{old_title}`\n"
-                    f"▶️ **Memutar berikutnya:** `{next_track['title']}` [{next_track['duration_str']}]"
+                    f"Skipped **{old_title}**.\nNow playing {next_link}{next_up}{next_dur_part}."
                 )
             else:
                 await interaction.response.send_message(
-                    f"⏭️ **Lagu dilewati:** `{old_title}`\n"
-                    f"⏹️ *Antrean kosong, pemutaran selesai.*"
+                    f"Skipped **{old_title}**. The queue is now empty."
                 )
 
         @bot.tree.command(name="queue", description="Lihat daftar antrean lagu yang akan diputar")
         async def cmd_queue(interaction: discord.Interaction):
             if not self.current_track and not self.queue:
-                await interaction.response.send_message("📭 **Antrean lagu saat ini kosong.**", ephemeral=True)
+                await interaction.response.send_message("The queue is empty.", ephemeral=True)
                 return
 
             lines = []
             if self.current_track:
-                lines.append(f"▶️ **Sedang Diputar:** `{self.current_track['title']}` [{self.current_track['duration_str']}]")
+                c_title = self.current_track.get("title", "Unknown")
+                c_url = self.current_track.get("webpage_url", "")
+                c_dur = self.current_track.get("duration_str", "Live")
+                c_up = self.current_track.get("uploader", "")
+
+                cur_link = f"[{c_title}]({c_url})" if c_url else f"**{c_title}**"
+                cur_up = f" by **{c_up}**" if c_up else ""
+                cur_dur = f" (` {c_dur} `)" if c_dur else ""
+                lines.append(f"Now playing: {cur_link}{cur_up}{cur_dur}")
 
             if self.queue:
-                lines.append(f"\n📋 **Daftar Antrean ({len(self.queue)} Lagu):**")
+                lines.append(f"\nQueue ({len(self.queue)} tracks):")
                 for i, t in enumerate(self.queue[:10], start=1):
-                    lines.append(f"`{i}.` **{t['title']}** [{t['duration_str']}] *(by {t.get('requester', 'User')})*")
+                    t_title = t.get("title", "Unknown")
+                    t_url = t.get("webpage_url", "")
+                    t_dur = t.get("duration_str", "Live")
+                    t_up = t.get("uploader", "")
+
+                    t_link = f"[{t_title}]({t_url})" if t_url else f"**{t_title}**"
+                    t_up_part = f" by **{t_up}**" if t_up else ""
+                    t_dur_part = f" (` {t_dur} `)" if t_dur else ""
+                    lines.append(f"`{i}.` {t_link}{t_up_part}{t_dur_part}")
                 if len(self.queue) > 10:
-                    lines.append(f"... dan {len(self.queue) - 10} lagu lainnya.")
+                    lines.append(f"... and {len(self.queue) - 10} more tracks.")
 
             await interaction.response.send_message("\n".join(lines))
 
         @bot.tree.command(name="clear", description="Kosongkan semua antrean lagu yang ada")
         async def cmd_clear(interaction: discord.Interaction):
             count = self.clear_queue()
-            await interaction.response.send_message(f"🗑️ **Antrean telah dikosongkan.** ({count} lagu dihapus)")
+            await interaction.response.send_message(f"Cleared {count} tracks from the queue.")
 
         @bot.tree.command(name="pause", description="Pause lagu yang sedang diputar")
         async def cmd_pause(interaction: discord.Interaction):
@@ -452,9 +481,9 @@ class DiscordVoiceBot:
                 self.voice_client.pause()
                 self.is_paused = True
                 self._notify_status("PAUSED", self.current_title)
-                await interaction.response.send_message("⏸️ **Pemutaran dijeda.**")
+                await interaction.response.send_message("Playback paused.")
             else:
-                await interaction.response.send_message("⚠️ Tidak ada audio yang sedang diputar.", ephemeral=True)
+                await interaction.response.send_message("Nothing is currently playing.", ephemeral=True)
 
         @bot.tree.command(name="resume", description="Lanjutkan lagu yang dijeda")
         async def cmd_resume(interaction: discord.Interaction):
@@ -462,21 +491,21 @@ class DiscordVoiceBot:
                 self.voice_client.resume()
                 self.is_paused = False
                 self._notify_status("PLAYING", self.current_title)
-                await interaction.response.send_message("▶️ **Pemutaran dilanjutkan.**")
+                await interaction.response.send_message("Playback resumed.")
             else:
-                await interaction.response.send_message("⚠️ Tidak ada lagu yang sedang dijeda.", ephemeral=True)
+                await interaction.response.send_message("Playback is not paused.", ephemeral=True)
 
         @bot.tree.command(name="stop", description="Hentikan lagu dan bersihkan antrean")
         async def cmd_stop(interaction: discord.Interaction):
             self.stop_playback()
-            await interaction.response.send_message("⏹️ **Pemutaran dihentikan dan antrean dibersihkan.**")
+            await interaction.response.send_message("Playback stopped and queue cleared.")
 
         @bot.tree.command(name="volume", description="Ubah volume suara bot (0% - 150%)")
         @app_commands.describe(percentage="Persentase volume (contoh: 100)")
         async def cmd_volume(interaction: discord.Interaction, percentage: int):
             vol = max(0, min(150, percentage)) / 100.0
             self.set_volume(vol)
-            await interaction.response.send_message(f"🔊 **Volume diatur ke:** `{percentage}%`")
+            await interaction.response.send_message(f"Volume set to `{percentage}%`.")
 
         @bot.tree.command(name="soundboard", description="Putar efek suara instan ke Voice Channel")
         @app_commands.describe(sound="Pilih efek suara")
@@ -517,9 +546,9 @@ class DiscordVoiceBot:
         async def cmd_leave(interaction: discord.Interaction):
             if self.voice_client and self.voice_client.is_connected():
                 self.leave_voice_channel()
-                await interaction.response.send_message("👋 **Bot telah keluar dari Voice Channel.**")
+                await interaction.response.send_message("Disconnected from voice channel.")
             else:
-                await interaction.response.send_message("⚠️ Bot sedang tidak berada di Voice Channel mana pun.", ephemeral=True)
+                await interaction.response.send_message("Bot is not in a voice channel.", ephemeral=True)
 
     def _run_bot(self, token: str):
         """Asyncio event loop runner."""
@@ -695,18 +724,11 @@ class DiscordVoiceBot:
             if not (sanitized_target.startswith("http://") or sanitized_target.startswith("https://")):
                 sanitized_target = f"ytsearch1:{sanitized_target}"
 
-            # Setup local cache folder
-            cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "cache"))
-            os.makedirs(cache_dir, exist_ok=True)
-
-            opts = dict(YTDL_OPTIONS)
-            opts["outtmpl"] = os.path.join(cache_dir, "%(id)s.%(ext)s")
-            opts["noplaylist"] = True
-
             loop = asyncio.get_event_loop()
-            ytdl = yt_dlp.YoutubeDL(opts)
+            # Fresh YoutubeDL instance per extraction with download=False for instant live streaming
+            ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
             data = await loop.run_in_executor(
-                None, lambda: ytdl.extract_info(sanitized_target, download=True)
+                None, lambda: ytdl.extract_info(sanitized_target, download=False)
             )
 
             if "entries" in data:
@@ -715,27 +737,24 @@ class DiscordVoiceBot:
                     return False, f"Lagu tidak ditemukan: `{query_or_url}`", False, {}
                 data = entries[0]
 
-            # Resolve local downloaded audio file path
-            filepath = ytdl.prepare_filename(data)
-            if not os.path.exists(filepath):
-                vid_id = data.get("id", "")
-                for fname in os.listdir(cache_dir):
-                    if fname.startswith(vid_id):
-                        filepath = os.path.join(cache_dir, fname)
-                        break
+            stream_url = data.get("url")
+            if not stream_url:
+                return False, "Tidak dapat mengekstrak stream audio", False, {}
 
             title = data.get("title", query_or_url)
+            uploader = data.get("uploader") or data.get("channel") or data.get("artist") or ""
             sec = data.get("duration", 0) or 0
             dur_str = f"{sec // 60}:{sec % 60:02d}" if sec else "Live"
 
             track = {
-                "filepath": filepath,
-                "url": filepath if os.path.exists(filepath) else data.get("url"),
+                "url": stream_url,
                 "title": title,
+                "uploader": uploader,
                 "duration_sec": sec,
                 "duration_str": dur_str,
                 "webpage_url": data.get("webpage_url", query_or_url),
                 "requester": requester,
+                "http_headers": data.get("http_headers", {}),
             }
 
             # Check if playback is currently active
@@ -753,7 +772,7 @@ class DiscordVoiceBot:
             return False, str(e), False, {}
 
     async def _async_play_track(self, track: Dict[str, any]):
-        """Play track on the current voice_client from local cache (zero 403, zero network drops)."""
+        """Play track live via FFmpeg with anti-403 Referer and User-Agent headers."""
         if not self.voice_client or not self.voice_client.is_connected():
             return
 
@@ -766,43 +785,27 @@ class DiscordVoiceBot:
             self.current_title = track["title"]
 
             ffmpeg_bin = get_ffmpeg_binary()
-            audio_src = track.get("filepath") or track.get("url")
-
-            if audio_src and os.path.exists(audio_src):
-                source = discord.FFmpegPCMAudio(
-                    audio_src,
-                    executable=ffmpeg_bin,
-                    options="-vn",
-                    stderr=subprocess.PIPE,
-                )
-            else:
-                headers = track.get("http_headers") or {}
-                user_agent = headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                before_opts = (
-                    "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
-                    f' -user_agent "{user_agent}"'
-                )
-                source = discord.FFmpegPCMAudio(
-                    audio_src,
-                    executable=ffmpeg_bin,
-                    before_options=before_opts,
-                    options="-vn",
-                    stderr=subprocess.PIPE,
-                )
+            headers = track.get("http_headers") or {}
+            user_agent = headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            referer = headers.get("Referer", "https://www.youtube.com/")
+            before_opts = (
+                "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+                f' -user_agent "{user_agent}"'
+                f' -referer "{referer}"'
+            )
+            source = discord.FFmpegPCMAudio(
+                track["url"],
+                executable=ffmpeg_bin,
+                before_options=before_opts,
+                options="-vn",
+                stderr=subprocess.PIPE,
+            )
             transformer = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             def _after_play(error):
                 if error:
                     print(f"[DiscordBot] Playback error: {error}")
                     self._notify_status("ERROR", f"Playback error: {error}")
-
-                # Auto-cleanup cached file after playback completes to preserve storage space
-                try:
-                    cached_f = track.get("filepath")
-                    if cached_f and os.path.exists(cached_f):
-                        os.remove(cached_f)
-                except Exception:
-                    pass
 
                 # Check if there are songs waiting in the queue
                 if self.queue and self.voice_client and self.voice_client.is_connected():

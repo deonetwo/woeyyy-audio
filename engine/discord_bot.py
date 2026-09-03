@@ -695,11 +695,18 @@ class DiscordVoiceBot:
             if not (sanitized_target.startswith("http://") or sanitized_target.startswith("https://")):
                 sanitized_target = f"ytsearch1:{sanitized_target}"
 
+            # Setup local cache folder
+            cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "cache"))
+            os.makedirs(cache_dir, exist_ok=True)
+
+            opts = dict(YTDL_OPTIONS)
+            opts["outtmpl"] = os.path.join(cache_dir, "%(id)s.%(ext)s")
+            opts["noplaylist"] = True
+
             loop = asyncio.get_event_loop()
-            # Fresh YoutubeDL instance per extraction so cookies and tokens never go stale after idle
-            ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
+            ytdl = yt_dlp.YoutubeDL(opts)
             data = await loop.run_in_executor(
-                None, lambda: ytdl.extract_info(sanitized_target, download=False)
+                None, lambda: ytdl.extract_info(sanitized_target, download=True)
             )
 
             if "entries" in data:
@@ -708,22 +715,27 @@ class DiscordVoiceBot:
                     return False, f"Lagu tidak ditemukan: `{query_or_url}`", False, {}
                 data = entries[0]
 
-            stream_url = data.get("url")
-            if not stream_url:
-                return False, "Tidak dapat mengekstrak stream audio", False, {}
+            # Resolve local downloaded audio file path
+            filepath = ytdl.prepare_filename(data)
+            if not os.path.exists(filepath):
+                vid_id = data.get("id", "")
+                for fname in os.listdir(cache_dir):
+                    if fname.startswith(vid_id):
+                        filepath = os.path.join(cache_dir, fname)
+                        break
 
             title = data.get("title", query_or_url)
             sec = data.get("duration", 0) or 0
             dur_str = f"{sec // 60}:{sec % 60:02d}" if sec else "Live"
 
             track = {
-                "url": stream_url,
+                "filepath": filepath,
+                "url": filepath if os.path.exists(filepath) else data.get("url"),
                 "title": title,
                 "duration_sec": sec,
                 "duration_str": dur_str,
                 "webpage_url": data.get("webpage_url", query_or_url),
                 "requester": requester,
-                "http_headers": data.get("http_headers", {}),
             }
 
             # Check if playback is currently active
@@ -740,12 +752,11 @@ class DiscordVoiceBot:
             print(f"[DiscordBot] Failed to enqueue or play: {e}")
             return False, str(e), False, {}
 
-    async def _async_play_track(self, track: Dict[str, any], is_retry: bool = False):
-        """Play track on the current voice_client with automatic recovery on 403/network error."""
+    async def _async_play_track(self, track: Dict[str, any]):
+        """Play track on the current voice_client from local cache (zero 403, zero network drops)."""
         if not self.voice_client or not self.voice_client.is_connected():
             return
 
-        start_time = time.time()
         try:
             ensure_opus_loaded()
             if self.voice_client.is_playing() or self.voice_client.is_paused():
@@ -755,67 +766,43 @@ class DiscordVoiceBot:
             self.current_title = track["title"]
 
             ffmpeg_bin = get_ffmpeg_binary()
-            headers = track.get("http_headers") or {}
-            user_agent = headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            before_opts = (
-                "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
-                f' -user_agent "{user_agent}"'
-            )
-            source = discord.FFmpegPCMAudio(
-                track["url"],
-                executable=ffmpeg_bin,
-                before_options=before_opts,
-                options="-vn",
-                stderr=subprocess.PIPE,
-            )
+            audio_src = track.get("filepath") or track.get("url")
+
+            if audio_src and os.path.exists(audio_src):
+                source = discord.FFmpegPCMAudio(
+                    audio_src,
+                    executable=ffmpeg_bin,
+                    options="-vn",
+                    stderr=subprocess.PIPE,
+                )
+            else:
+                headers = track.get("http_headers") or {}
+                user_agent = headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                before_opts = (
+                    "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+                    f' -user_agent "{user_agent}"'
+                )
+                source = discord.FFmpegPCMAudio(
+                    audio_src,
+                    executable=ffmpeg_bin,
+                    before_options=before_opts,
+                    options="-vn",
+                    stderr=subprocess.PIPE,
+                )
             transformer = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             def _after_play(error):
-                playback_duration = time.time() - start_time
-                had_ffmpeg_error = False
-
                 if error:
                     print(f"[DiscordBot] Playback error: {error}")
                     self._notify_status("ERROR", f"Playback error: {error}")
-                    had_ffmpeg_error = True
-                else:
-                    # Check if FFmpeg process crashed or exited abnormally
-                    try:
-                        proc = getattr(source, "_process", None)
-                        if proc and proc.poll() is not None and proc.returncode != 0:
-                            err_text = ""
-                            if proc.stderr:
-                                err_text = proc.stderr.read().decode("utf-8", errors="ignore").strip()
-                            if err_text:
-                                print(f"[DiscordBot] FFmpeg error (code {proc.returncode}):\n{err_text[-500:]}")
-                            had_ffmpeg_error = True
-                    except Exception:
-                        pass
 
-                # If stream terminated prematurely within 3.5s (e.g. 403 Forbidden or network reset after idle):
-                # Automatically re-extract a fresh stream URL and retry playback once!
-                if had_ffmpeg_error and not is_retry and playback_duration < 3.5 and self._loop and self._loop.is_running():
-                    print(f"[DiscordBot] Stream terminated prematurely on '{track['title']}'. Auto-refreshing and retrying...")
-
-                    async def _do_retry():
-                        try:
-                            fresh_ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
-                            web_url = track.get("webpage_url") or track.get("title")
-                            fresh_data = await self._loop.run_in_executor(
-                                None, lambda: fresh_ytdl.extract_info(web_url, download=False)
-                            )
-                            if "entries" in fresh_data and fresh_data["entries"]:
-                                fresh_data = fresh_data["entries"][0]
-                            if fresh_data.get("url"):
-                                track["url"] = fresh_data["url"]
-                                track["http_headers"] = fresh_data.get("http_headers", {})
-                                await self._async_play_track(track, is_retry=True)
-                                return
-                        except Exception as ex:
-                            print(f"[DiscordBot] Auto-retry failed: {ex}")
-
-                    asyncio.run_coroutine_threadsafe(_do_retry(), self._loop)
-                    return
+                # Auto-cleanup cached file after playback completes to preserve storage space
+                try:
+                    cached_f = track.get("filepath")
+                    if cached_f and os.path.exists(cached_f):
+                        os.remove(cached_f)
+                except Exception:
+                    pass
 
                 # Check if there are songs waiting in the queue
                 if self.queue and self.voice_client and self.voice_client.is_connected():

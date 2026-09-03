@@ -56,4 +56,5 @@ scratch/
 
 # Discord Bot Private Token & Config
 .bot_config.json
+.lite_config.json
 .agents/skills/custom-skill/SKILL.md

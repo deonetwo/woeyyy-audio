@@ -4,6 +4,7 @@ scipy>=1.10.0
 sounddevice>=0.4.6
 customtkinter>=6.0.0
 pillow>=10.0.0
+tkinter-icons[lucide]>=5.1.0
 
 # Discord Voice Bot & Hi-Fi Audio Streaming (48kHz Stereo Opus via PyNaCl)
 discord.py[voice]>=2.3.0

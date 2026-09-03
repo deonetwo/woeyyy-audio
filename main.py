@@ -19,6 +19,11 @@ def main():
         action="store_true",
         help="Run headless Discord Hi-Fi Voice Bot in lightweight terminal mode",
     )
+    parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="Run Woeyyy Lite (minimalist Mic Boost & on-demand Discord bot)",
+    )
     args = parser.parse_args()
 
     if args.bot:
@@ -27,6 +32,9 @@ def main():
     elif args.cli:
         from run_mic_boost import run_interactive_cli
         run_interactive_cli()
+    elif args.lite:
+        from gui_lite import main as run_gui_lite
+        run_gui_lite()
     else:
         try:
             import customtkinter  # noqa: F401

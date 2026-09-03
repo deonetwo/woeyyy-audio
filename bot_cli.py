@@ -18,9 +18,9 @@ from engine.discord_bot import DiscordVoiceBot, load_saved_token, save_token
 
 def status_callback(status: str, detail: str):
     """Handle status updates from the Discord voice bot."""
-    if status == "CONNECTED":
+    if status in ("ONLINE", "CONNECTED"):
         print(f"\n[+] Logged in successfully: {detail}")
-    elif status == "DISCONNECTED":
+    elif status in ("DISCONNECTED", "OFFLINE"):
         print(f"\n[-] Bot disconnected from Discord.")
     elif status == "VOICE_CONNECTED":
         print(f"\n[+] Joined Voice Channel: #{detail}")

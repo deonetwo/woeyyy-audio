@@ -4,8 +4,11 @@ Ultra-lightweight background audio bot for Discord servers.
 Streams 48kHz stereo Opus with zero GUI overhead (~25MB RAM).
 """
 
+import argparse
 import os
+import signal
 import sys
+import threading
 import time
 from typing import Optional
 
@@ -69,6 +72,13 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
+    parser = argparse.ArgumentParser(description="Woeyyy - Headless Discord Hi-Fi Voice Bot")
+    parser.add_argument("--daemon", action="store_true", help="Run in headless non-interactive daemon mode (Systemd / Cloud)")
+    parser.add_argument("--token", type=str, default="", help="Discord Bot Token (or set DISCORD_BOT_TOKEN env var)")
+    args = parser.parse_args()
+
+    is_daemon = args.daemon or (not sys.stdin.isatty())
+
     lock = SingleInstanceLock()
     if not lock.acquire():
         print("\n[Security Alert] Another session of Woeyyy is already active on this system.")
@@ -79,34 +89,62 @@ def main():
     try:
         print_banner()
 
-        # 1. Load or prompt for bot token
-        token = load_saved_token()
-        if token:
-            print(f"[*] Found saved Bot Token: {mask_token(token)}")
-            ans = input("    Press Enter to use this token, or type a new one: ").strip()
-            if ans:
-                token = ans
+        # 1. Resolve Bot Token
+        token = args.token or os.environ.get("DISCORD_BOT_TOKEN")
+        if not token:
+            token = load_saved_token()
+
+        if not token:
+            if is_daemon:
+                print("[ERROR] Bot token not provided. Pass --token <token> or set DISCORD_BOT_TOKEN environment variable.")
+                sys.exit(1)
+            else:
+                print("[!] No saved bot token found.")
+                token = input("    Enter your Discord Bot Token: ").strip()
+                if not token:
+                    print("[ERROR] Token cannot be empty. Exiting.")
+                    sys.exit(1)
                 save_token(token)
         else:
-            print("[!] No saved bot token found.")
-            token = input("    Enter your Discord Bot Token: ").strip()
-            if not token:
-                print("[ERROR] Token cannot be empty. Exiting.")
-                sys.exit(1)
-            save_token(token)
+            print(f"[*] Using Bot Token: {mask_token(token)}")
+            if not is_daemon and not args.token and not os.environ.get("DISCORD_BOT_TOKEN"):
+                ans = input("    Press Enter to use this token, or type a new one: ").strip()
+                if ans:
+                    token = ans
+                    save_token(token)
 
-    # 2. Instantiate and start bot
-    bot = DiscordVoiceBot(on_status_change=status_callback)
-    print("\n[*] Connecting to Discord Gateway...")
-    bot.start(token)
+        # 2. Instantiate and start bot
+        bot = DiscordVoiceBot(on_status_change=status_callback)
+        print("\n[*] Connecting to Discord Gateway...")
+        bot.start(token)
 
-    # Wait for login
-    time.sleep(2.5)
+        # Wait for login
+        time.sleep(2.5)
 
-    print_help()
+        if is_daemon:
+            print("[*] Running in headless daemon mode.")
+            print("[*] Bot is active 24/7! Control via Discord Slash Commands (/) in chat:")
+            print("    /play <query/url>  - Stream music into voice channel")
+            print("    /skip              - Skip current song")
+            print("    /queue             - View upcoming song queue")
+            print("    /join              - Summon bot to your voice channel")
+            print("    /leave             - Disconnect bot from voice")
+            print("    /stop              - Stop playback")
 
-    # 3. Interactive CLI loop
-    try:
+            stop_event = threading.Event()
+
+            def _handle_signal(sig, frame):
+                print(f"\n[*] Received signal {sig}, terminating gracefully...")
+                stop_event.set()
+
+            signal.signal(signal.SIGINT, _handle_signal)
+            signal.signal(signal.SIGTERM, _handle_signal)
+            stop_event.wait()
+            return
+
+        print_help()
+
+        # 3. Interactive CLI loop
         while True:
             try:
                 cmd_line = input("woeyyy-bot> ").strip()

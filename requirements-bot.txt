@@ -1,0 +1,4 @@
+# Minimal requirements for headless Discord Bot deployment (e.g. AWS EC2, Lightsail, Linux VPS)
+discord.py[voice]>=2.3.0
+yt-dlp>=2024.0.0
+imageio-ffmpeg>=0.5.0

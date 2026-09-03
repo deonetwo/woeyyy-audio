@@ -15,6 +15,7 @@ import json
 import os
 import threading
 import time
+import warnings
 from typing import Callable, Dict, List, Optional, Tuple
 
 import discord
@@ -22,6 +23,10 @@ from discord import app_commands
 from discord.ext import commands
 import imageio_ffmpeg
 import yt_dlp
+
+# Suppress benign aiohttp unclosed connector ResourceWarnings on exit
+warnings.filterwarnings("ignore", message=".*unclosed.*", category=ResourceWarning)
+warnings.filterwarnings("ignore", message=".*Unclosed.*", category=ResourceWarning)
 
 from engine.security import (
     secure_file_permissions,
@@ -42,6 +47,10 @@ def ensure_opus_loaded() -> bool:
 
     discord_dir = os.path.dirname(discord.__file__)
     possible_locations = [
+        "libopus.so.0",
+        "libopus.so",
+        "/usr/lib/x86_64-linux-gnu/libopus.so.0",
+        "/usr/lib/libopus.so.0",
         os.path.join(discord_dir, "bin", "libopus-0.x64.dll"),
         os.path.join(discord_dir, "bin", "libopus-0.x86.dll"),
         "libopus-0.x64.dll",
@@ -50,12 +59,12 @@ def ensure_opus_loaded() -> bool:
     ]
 
     for loc in possible_locations:
-        if os.path.exists(loc):
-            try:
-                discord.opus.load_opus(loc)
+        try:
+            discord.opus.load_opus(loc)
+            if discord.opus.is_loaded():
                 return True
-            except Exception:
-                pass
+        except Exception:
+            pass
 
     try:
         return discord.opus._load_default()
@@ -138,6 +147,34 @@ def save_token(token: str):
         secure_file_permissions(CONFIG_PATH)
     except Exception as e:
         print(f"[DiscordBot] Failed to save token: {e}")
+
+
+def resolve_song_info(query_or_url: str) -> Tuple[bool, str, str]:
+    """
+    Resolve real track title and canonical URL using yt-dlp.
+    Can run standalone without needing an active Discord bot gateway session.
+    Returns: (success, resolved_title, canonical_url)
+    """
+    try:
+        from engine.security import sanitize_audio_target
+        target = normalize_youtube_url(query_or_url)
+        is_safe, sanitized_target, _ = sanitize_audio_target(target)
+        if not is_safe:
+            return False, query_or_url, query_or_url
+
+        if not (sanitized_target.startswith("http://") or sanitized_target.startswith("https://")):
+            sanitized_target = f"ytsearch1:{sanitized_target}"
+
+        with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ydl:
+            data = ydl.extract_info(sanitized_target, download=False)
+            if "entries" in data and data["entries"]:
+                data = data["entries"][0]
+            title = data.get("title", query_or_url)
+            url = data.get("webpage_url") or data.get("url") or sanitized_target
+            return True, title, url
+    except Exception as e:
+        print(f"[DiscordBot] Notice: could not resolve song metadata: {e}")
+        return False, query_or_url, query_or_url
 
 
 class DiscordVoiceBot:
@@ -447,6 +484,8 @@ class DiscordVoiceBot:
                 if pending:
                     self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                 self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+                # Allow aiohttp connectors a brief moment to finish graceful teardown
+                self._loop.run_until_complete(asyncio.sleep(0.25))
             except Exception:
                 pass
             if not self._loop.is_closed():
@@ -461,7 +500,9 @@ class DiscordVoiceBot:
             try:
                 if self.voice_client and self.voice_client.is_connected():
                     await self.voice_client.disconnect(force=True)
-                await self.client.close()
+                if self.client:
+                    await self.client.close()
+                await asyncio.sleep(0.25)
             except Exception as e:
                 print(f"[DiscordBot] Error during stop: {e}")
 
@@ -586,6 +627,7 @@ class DiscordVoiceBot:
             # Check if playback is currently active
             if self.is_playing or self.is_paused:
                 self.queue.append(track)
+                self._notify_status("ENQUEUED", track.get("title", query_or_url))
                 self._notify_status("QUEUE_UPDATED", "")
                 return True, "Added to queue", True, track
             else:
@@ -659,6 +701,8 @@ class DiscordVoiceBot:
             success, msg, is_q, track = await self._async_enqueue_or_play(query_or_url, requester="GUI Host")
             if not success:
                 self._notify_status("ERROR", msg)
+            elif is_q:
+                self._notify_status("ENQUEUED", track.get("title", query_or_url))
 
         asyncio.run_coroutine_threadsafe(_run(), self._loop)
 

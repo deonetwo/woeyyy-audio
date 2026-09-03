@@ -27,7 +27,7 @@ sys.path.insert(0, BASE_DIR)
 
 from engine.audio_engine import AudioDeviceManager, MicBoostEngine
 from engine.profiles import DEFAULT_PROFILE_KEY
-from engine.discord_bot import DiscordVoiceBot, load_saved_token, save_token
+from engine.discord_bot import DiscordVoiceBot, load_saved_token, save_token, resolve_song_info
 from engine.security import SingleInstanceLock, secure_file_permissions, mask_token
 
 # CustomTkinter theme
@@ -73,6 +73,7 @@ def load_lite_config() -> dict:
         "limiter_enabled": True,
         "mute": False,
         "bot_volume": 1.0,
+        "favorite_tracks": [],
     }
     if os.path.exists(CONFIG_FILE):
         try:
@@ -580,12 +581,44 @@ class WoeyyyLiteApp(ctk.CTk):
         )
         self.btn_stop_track.pack(side="left", padx=(0, 4))
 
+        self.btn_star = ctk.CTkButton(
+            song_row, text="", image=get_icon("star", color=COLOR_AMBER, size=13), width=28, height=28,
+            font=self.font_btn, fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
+            command=self._on_toggle_favorite
+        )
+        self.btn_star.pack(side="left", padx=(0, 4))
+
         self.btn_skip = ctk.CTkButton(
             song_row, text="", image=get_icon("skip-forward", color=TEXT_SECONDARY, size=12), width=28, height=28,
             font=self.font_btn, fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
             state="disabled", command=self._on_bot_skip
         )
         self.btn_skip.pack(side="right")
+
+        # Favorite Music Quick-Access Row
+        fav_row = ctk.CTkFrame(card, fg_color="transparent")
+        fav_row.pack(fill="x", padx=14, pady=(2, 4))
+
+        self.opt_favorites = ctk.CTkOptionMenu(
+            fav_row, values=["No favorites yet"], command=self._on_favorite_selected,
+            font=self.font_caption, dropdown_font=self.font_caption, fg_color=BTN_SECONDARY,
+            button_color=BORDER_SUBTLE, height=26, corner_radius=RADIUS_BTN
+        )
+        self.opt_favorites.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        self.btn_queue_fav = ctk.CTkButton(
+            fav_row, text="+ Queue", image=get_icon("list-music", color="#ffffff", size=12), compound="left",
+            width=78, height=26, font=self.font_btn, fg_color=COLOR_BLUE, hover_color=COLOR_BLUE_HOVER,
+            text_color="#ffffff", state="disabled", command=self._on_queue_favorite
+        )
+        self.btn_queue_fav.pack(side="left", padx=(0, 4))
+
+        self.btn_del_fav = ctk.CTkButton(
+            fav_row, text="", image=get_icon("trash-2", color=TEXT_MUTED, size=12), width=26, height=26,
+            font=self.font_btn, fg_color=BTN_SECONDARY, hover_color="#4c0519",
+            state="disabled", command=self._on_delete_favorite
+        )
+        self.btn_del_fav.pack(side="right")
 
         # Status & Volume bar
         stat_bar = ctk.CTkFrame(card, fg_color=BG_CARD_SUBTLE, corner_radius=RADIUS_BTN, border_width=1, border_color=BORDER_SUBTLE)
@@ -613,6 +646,9 @@ class WoeyyyLiteApp(ctk.CTk):
         )
         self.slider_bot_vol.set(saved_vol)
         self.slider_bot_vol.pack(side="right", padx=4)
+
+        # Initialize favorites dropdown
+        self._refresh_favorites_ui()
 
     # =========================================================================
     # AUDIO ENGINE LOGIC & PERSISTENCE
@@ -895,11 +931,14 @@ class WoeyyyLiteApp(ctk.CTk):
                 )
                 self.btn_join.configure(state="disabled", text="Join VC", fg_color=BTN_SECONDARY)
                 self.btn_play.configure(state="disabled")
+                self.btn_queue_fav.configure(state="disabled")
                 self.btn_stop_track.configure(state="disabled")
                 self.btn_skip.configure(state="disabled")
             elif status == "VOICE_CONNECTED":
                 self.btn_join.configure(text="Leave VC", fg_color=COLOR_ROSE, hover_color=COLOR_ROSE_HOVER)
                 self.btn_play.configure(state="normal")
+                if self._get_favorites_list():
+                    self.btn_queue_fav.configure(state="normal")
                 self.btn_stop_track.configure(state="normal")
                 self.btn_skip.configure(state="normal")
                 self.lbl_now_playing.configure(
@@ -910,6 +949,7 @@ class WoeyyyLiteApp(ctk.CTk):
             elif status == "VOICE_DISCONNECTED":
                 self.btn_join.configure(text="Join VC", fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER)
                 self.btn_play.configure(state="disabled")
+                self.btn_queue_fav.configure(state="disabled")
                 self.btn_stop_track.configure(state="disabled")
                 self.btn_skip.configure(state="disabled")
                 self.lbl_now_playing.configure(
@@ -918,11 +958,43 @@ class WoeyyyLiteApp(ctk.CTk):
                     compound="left", text_color=TEXT_MUTED
                 )
             elif status == "PLAYING":
+                q_curr = len(self.bot.queue) if self.bot else 0
+                suffix = f" (+{q_curr} queued)" if q_curr > 0 else ""
                 self.lbl_now_playing.configure(
-                    text=f" Playing: {detail}",
+                    text=f" Playing: {detail[:26]}{suffix}",
                     image=get_icon("music", color=COLOR_EMERALD, size=14),
                     compound="left", text_color=COLOR_EMERALD
                 )
+            elif status == "ENQUEUED":
+                q_len = len(self.bot.queue) if self.bot else 1
+                self.lbl_now_playing.configure(
+                    text=f" Queued (#{q_len}): {detail[:24]}",
+                    image=get_icon("list-music", color=COLOR_CYAN, size=14),
+                    compound="left", text_color=COLOR_CYAN
+                )
+                def _restore_playing():
+                    if self.bot and self.bot.is_playing:
+                        curr = self.bot.current_title or "Audio playing"
+                        q_curr = len(self.bot.queue)
+                        suffix = f" (+{q_curr} queued)" if q_curr > 0 else ""
+                        self.lbl_now_playing.configure(
+                            text=f" Playing: {curr[:26]}{suffix}",
+                            image=get_icon("music", color=COLOR_EMERALD, size=14),
+                            compound="left", text_color=COLOR_EMERALD
+                        )
+                self.after(3500, _restore_playing)
+            elif status == "QUEUE_UPDATED":
+                if self.bot and self.bot.is_playing:
+                    txt = self.lbl_now_playing.cget("text")
+                    if "Loading:" in txt or "Searching" in txt:
+                        curr = self.bot.current_title or "Audio playing"
+                        q_curr = len(self.bot.queue)
+                        suffix = f" (+{q_curr} queued)" if q_curr > 0 else ""
+                        self.lbl_now_playing.configure(
+                            text=f" Playing: {curr[:26]}{suffix}",
+                            image=get_icon("music", color=COLOR_EMERALD, size=14),
+                            compound="left", text_color=COLOR_EMERALD
+                        )
             elif status == "PAUSED":
                 self.lbl_now_playing.configure(
                     text=f" Paused: {detail}",
@@ -948,6 +1020,166 @@ class WoeyyyLiteApp(ctk.CTk):
                     compound="left", text_color=COLOR_ROSE
                 )
         self.after(0, _apply)
+
+    # =========================================================================
+    # FAVORITE MUSIC MANAGEMENT
+    # =========================================================================
+    def _get_favorites_list(self) -> List[Dict[str, str]]:
+        raw = self.cfg.get("favorite_tracks", [])
+        cleaned = []
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                cleaned.append({"title": item.strip(), "query": item.strip()})
+            elif isinstance(item, dict) and item.get("title"):
+                cleaned.append({
+                    "title": item.get("title", "").strip(),
+                    "query": item.get("query", item.get("title", "")).strip(),
+                })
+        return cleaned
+
+    def _refresh_favorites_ui(self, selected: Optional[str] = None):
+        favs = self._get_favorites_list()
+        if not favs:
+            self.opt_favorites.configure(values=["No favorites saved yet"])
+            self.opt_favorites.set("No favorites saved yet")
+            self.btn_queue_fav.configure(state="disabled")
+            self.btn_del_fav.configure(state="disabled")
+        else:
+            titles = [f["title"] for f in favs]
+            self.opt_favorites.configure(values=titles)
+            if selected and selected in titles:
+                self.opt_favorites.set(selected)
+            else:
+                self.opt_favorites.set(titles[0])
+            if self.bot and self.bot.is_in_voice:
+                self.btn_queue_fav.configure(state="normal")
+            else:
+                self.btn_queue_fav.configure(state="disabled")
+            self.btn_del_fav.configure(state="normal")
+
+    def _on_toggle_favorite(self):
+        favs = self._get_favorites_list()
+
+        # Case A: If entry_song is empty and track is currently streaming in VC
+        if not self.entry_song.get().strip():
+            if self.bot and self.bot.current_track:
+                title = self.bot.current_track.get("title", "").strip()
+                query = (
+                    self.bot.current_track.get("webpage_url")
+                    or self.bot.current_track.get("url")
+                    or title
+                )
+                self._save_or_remove_favorite(favs, title, query)
+                return
+            else:
+                self.lbl_now_playing.configure(
+                    text=" Enter a song or play one to favorite!",
+                    image=get_icon("star", color=COLOR_AMBER, size=14),
+                    compound="left", text_color=COLOR_AMBER
+                )
+                return
+
+        # Case B: User typed text or link into entry_song -> resolve real title via yt-dlp first!
+        raw_query = self.entry_song.get().strip()
+        self.btn_star.configure(state="disabled")
+        self.lbl_now_playing.configure(
+            text=" Getting song info...",
+            image=get_icon("music", color=COLOR_AMBER, size=14),
+            compound="left", text_color=COLOR_AMBER
+        )
+
+        def _worker():
+            ok, resolved_title, canonical_url = resolve_song_info(raw_query)
+
+            def _apply():
+                self.btn_star.configure(state="normal")
+                final_title = resolved_title.strip() if (ok and resolved_title) else raw_query
+                final_query = canonical_url.strip() if (ok and canonical_url) else raw_query
+                self._save_or_remove_favorite(favs, final_title, final_query)
+
+            self.after(0, _apply)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _save_or_remove_favorite(self, favs: List[Dict[str, str]], title: str, query: str):
+        existing_idx = next(
+            (i for i, f in enumerate(favs)
+             if f["title"].lower() == title.lower() or f["query"].lower() == query.lower()),
+            None
+        )
+
+        if existing_idx is not None:
+            favs.pop(existing_idx)
+            self.cfg["favorite_tracks"] = favs
+            self._persist_config()
+            self._refresh_favorites_ui()
+            self.lbl_now_playing.configure(
+                text=f" Removed favorite: {title[:24]}",
+                image=get_icon("star-off", color=TEXT_MUTED, size=14),
+                compound="left", text_color=TEXT_MUTED
+            )
+        else:
+            favs.insert(0, {"title": title, "query": query})
+            self.cfg["favorite_tracks"] = favs
+            self._persist_config()
+            self._refresh_favorites_ui(selected=title)
+            self.lbl_now_playing.configure(
+                text=f" Saved favorite: {title[:24]}",
+                image=get_icon("star", color=COLOR_AMBER, size=14),
+                compound="left", text_color=COLOR_AMBER
+            )
+
+    def _on_favorite_selected(self, chosen_title: str):
+        favs = self._get_favorites_list()
+        matched = next((f for f in favs if f["title"] == chosen_title), None)
+        if matched:
+            self.entry_song.delete(0, "end")
+            self.entry_song.insert(0, matched["query"])
+
+    def _on_queue_favorite(self):
+        chosen_title = self.opt_favorites.get()
+        favs = self._get_favorites_list()
+        matched = next((f for f in favs if f["title"] == chosen_title), None)
+        if not matched:
+            return
+        query = matched["query"]
+        if not self.bot or not self.bot.is_in_voice:
+            self.lbl_now_playing.configure(
+                text=" Join a Voice Channel first!",
+                image=get_icon("circle-alert", color=COLOR_AMBER, size=14),
+                compound="left", text_color=COLOR_AMBER
+            )
+            return
+
+        # Enqueue track into Discord bot pipeline
+        self.bot.play_music(query)
+
+        if self.bot.is_playing or self.bot.is_paused:
+            q_pos = len(self.bot.queue) + 1
+            self.lbl_now_playing.configure(
+                text=f" Added to Queue (#{q_pos}): {matched['title'][:22]}",
+                image=get_icon("list-music", color=COLOR_CYAN, size=14),
+                compound="left", text_color=COLOR_CYAN
+            )
+        else:
+            self.lbl_now_playing.configure(
+                text=f" Queued & Starting: {matched['title'][:22]}",
+                image=get_icon("music", color=COLOR_EMERALD, size=14),
+                compound="left", text_color=COLOR_EMERALD
+            )
+
+    def _on_delete_favorite(self):
+        chosen_title = self.opt_favorites.get()
+        favs = self._get_favorites_list()
+        favs = [f for f in favs if f["title"] != chosen_title]
+        self.cfg["favorite_tracks"] = favs
+        self._persist_config()
+        self._refresh_favorites_ui()
+        self.lbl_now_playing.configure(
+            text=f" Deleted: {chosen_title[:25]}",
+            image=get_icon("trash-2", color=TEXT_MUTED, size=14),
+            compound="left", text_color=TEXT_MUTED
+        )
 
     def _refresh_voice_channels(self):
         if not self.bot:

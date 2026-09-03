@@ -1,0 +1,21 @@
+[Unit]
+Description=Woeyyy Discord Hi-Fi Voice Bot Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/woeyyy-audio
+# Option A: specify token via environment variable
+Environment="DISCORD_BOT_TOKEN=YOUR_BOT_TOKEN_HERE"
+# Option B: or place token inside .bot_config.json in the working directory
+ExecStart=/home/ubuntu/woeyyy-audio/venv/bin/python bot_cli.py --daemon
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

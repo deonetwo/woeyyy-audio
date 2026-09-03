@@ -363,7 +363,19 @@ class DiscordVoiceBot:
 
             channel = interaction.user.voice.channel
             try:
-                if not self.voice_client or not self.voice_client.is_connected():
+                # Verify voice connection is alive; if idle/zombie or disconnected, cleanly reconnect
+                voice_alive = (
+                    self.voice_client
+                    and self.voice_client.is_connected()
+                    and getattr(self.voice_client, "ws", None)
+                    and not getattr(self.voice_client.ws, "closed", True)
+                )
+                if not voice_alive:
+                    if self.voice_client:
+                        try:
+                            await self.voice_client.disconnect(force=True)
+                        except Exception:
+                            pass
                     self.voice_client = await channel.connect(timeout=15.0, reconnect=True)
                     self.is_in_voice = True
                     self.current_channel_id = channel.id
@@ -696,8 +708,10 @@ class DiscordVoiceBot:
                 sanitized_target = f"ytsearch1:{sanitized_target}"
 
             loop = asyncio.get_event_loop()
+            # Fresh YoutubeDL instance per extraction so cookies and tokens never go stale after idle
+            ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
             data = await loop.run_in_executor(
-                None, lambda: self.ytdl.extract_info(sanitized_target, download=False)
+                None, lambda: ytdl.extract_info(sanitized_target, download=False)
             )
 
             if "entries" in data:
@@ -738,11 +752,12 @@ class DiscordVoiceBot:
             print(f"[DiscordBot] Failed to enqueue or play: {e}")
             return False, str(e), False, {}
 
-    async def _async_play_track(self, track: Dict[str, any]):
-        """Play track on the current voice_client."""
+    async def _async_play_track(self, track: Dict[str, any], is_retry: bool = False):
+        """Play track on the current voice_client with automatic recovery on 403/network error."""
         if not self.voice_client or not self.voice_client.is_connected():
             return
 
+        start_time = time.time()
         try:
             ensure_opus_loaded()
             if self.voice_client.is_playing() or self.voice_client.is_paused():
@@ -769,9 +784,13 @@ class DiscordVoiceBot:
             transformer = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             def _after_play(error):
+                playback_duration = time.time() - start_time
+                had_ffmpeg_error = False
+
                 if error:
                     print(f"[DiscordBot] Playback error: {error}")
                     self._notify_status("ERROR", f"Playback error: {error}")
+                    had_ffmpeg_error = True
                 else:
                     # Check if FFmpeg process crashed or exited abnormally
                     try:
@@ -782,8 +801,34 @@ class DiscordVoiceBot:
                                 err_text = proc.stderr.read().decode("utf-8", errors="ignore").strip()
                             if err_text:
                                 print(f"[DiscordBot] FFmpeg error (code {proc.returncode}):\n{err_text[-500:]}")
+                            had_ffmpeg_error = True
                     except Exception:
                         pass
+
+                # If stream terminated prematurely within 3.5s (e.g. 403 Forbidden or network reset after idle):
+                # Automatically re-extract a fresh stream URL and retry playback once!
+                if had_ffmpeg_error and not is_retry and playback_duration < 3.5 and self._loop and self._loop.is_running():
+                    print(f"[DiscordBot] Stream terminated prematurely on '{track['title']}'. Auto-refreshing and retrying...")
+
+                    async def _do_retry():
+                        try:
+                            fresh_ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
+                            web_url = track.get("webpage_url") or track.get("title")
+                            fresh_data = await self._loop.run_in_executor(
+                                None, lambda: fresh_ytdl.extract_info(web_url, download=False)
+                            )
+                            if "entries" in fresh_data and fresh_data["entries"]:
+                                fresh_data = fresh_data["entries"][0]
+                            if fresh_data.get("url"):
+                                track["url"] = fresh_data["url"]
+                                track["http_headers"] = fresh_data.get("http_headers", {})
+                                await self._async_play_track(track, is_retry=True)
+                                return
+                        except Exception as ex:
+                            print(f"[DiscordBot] Auto-retry failed: {ex}")
+
+                    asyncio.run_coroutine_threadsafe(_do_retry(), self._loop)
+                    return
 
                 # Check if there are songs waiting in the queue
                 if self.queue and self.voice_client and self.voice_client.is_connected():

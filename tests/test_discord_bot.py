@@ -23,7 +23,8 @@ class TestDiscordVoiceBot(unittest.TestCase):
     def test_ffmpeg_binary_exists(self):
         """Verify imageio-ffmpeg bundled binary exists and is executable."""
         self.assertTrue(os.path.exists(FFMPEG_EXECUTABLE))
-        self.assertTrue(FFMPEG_EXECUTABLE.endswith(".exe"))
+        if sys.platform == "win32":
+            self.assertTrue(FFMPEG_EXECUTABLE.endswith(".exe"))
 
     def test_token_save_and_load(self):
         """Verify token persistence in .env and DISCORD_BOT_TOKEN."""

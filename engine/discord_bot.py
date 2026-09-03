@@ -13,6 +13,7 @@ Features:
 import asyncio
 import json
 import os
+import sys
 import threading
 import time
 import warnings
@@ -76,10 +77,19 @@ def ensure_opus_loaded() -> bool:
 
 
 def get_ffmpeg_binary() -> str:
-    """Resolve FFmpeg binary path via imageio_ffmpeg with system PATH fallback."""
+    """Resolve FFmpeg binary path: prefer system ffmpeg first, then imageio_ffmpeg."""
+    import shutil
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return sys_ffmpeg
     try:
         exe = imageio_ffmpeg.get_ffmpeg_exe()
         if exe and os.path.exists(exe):
+            if hasattr(os, "chmod") and sys.platform != "win32":
+                try:
+                    os.chmod(exe, 0o755)
+                except Exception:
+                    pass
             return exe
     except Exception:
         pass
@@ -113,7 +123,7 @@ YTDL_OPTIONS = {
 
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn -b:a 384k",
+    "options": "-vn",
 }
 
 
@@ -688,6 +698,7 @@ class DiscordVoiceBot:
                 "duration_str": dur_str,
                 "webpage_url": data.get("webpage_url", query_or_url),
                 "requester": requester,
+                "http_headers": data.get("http_headers", {}),
             }
 
             # Check if playback is currently active
@@ -717,10 +728,20 @@ class DiscordVoiceBot:
             self.current_track = track
             self.current_title = track["title"]
 
+            ffmpeg_bin = get_ffmpeg_binary()
+            headers = track.get("http_headers") or {}
+            user_agent = headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            before_opts = (
+                "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+                f' -user_agent "{user_agent}"'
+            )
+
             source = discord.FFmpegPCMAudio(
                 track["url"],
-                executable=FFMPEG_EXECUTABLE,
-                **FFMPEG_OPTIONS,
+                executable=ffmpeg_bin,
+                before_options=before_opts,
+                options="-vn",
+                stderr=subprocess.PIPE,
             )
             transformer = discord.PCMVolumeTransformer(source, volume=self.volume)
 
@@ -728,6 +749,18 @@ class DiscordVoiceBot:
                 if error:
                     print(f"[DiscordBot] Playback error: {error}")
                     self._notify_status("ERROR", f"Playback error: {error}")
+                else:
+                    # Check if FFmpeg process crashed or exited abnormally
+                    try:
+                        proc = getattr(source, "_process", None)
+                        if proc and proc.poll() is not None and proc.returncode != 0:
+                            err_text = ""
+                            if proc.stderr:
+                                err_text = proc.stderr.read().decode("utf-8", errors="ignore").strip()
+                            if err_text:
+                                print(f"[DiscordBot] FFmpeg error (code {proc.returncode}):\n{err_text[-500:]}")
+                    except Exception:
+                        pass
 
                 # Check if there are songs waiting in the queue
                 if self.queue and self.voice_client and self.voice_client.is_connected():

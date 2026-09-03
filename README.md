@@ -1,140 +1,77 @@
-# Woeyyy Audio Suite 🎙️⚡🤖
+# Woeyyy Audio Suite
 
-**Woeyyy** is a high-performance, low-latency audio utility and Discord Hi-Fi streaming engine built with Python. It provides studio-grade microphone digital amplification, soft-knee clipping protection, polyphonic soundboards, and an embedded 48kHz Stereo Opus Discord Voice Bot with slash command integration.
-
----
-
-## 🎯 Dual Edition Architecture
-
-Woeyyy is architected to fit two distinct workflows without compromise:
-
-| Feature / Edition | **Woeyyy Lite** (Recommended) | **Woeyyy Original** (Full Suite) | **Headless Bot** (Cloud / CLI) |
-|---|:---:|:---:|:---:|
-| **Target User** | Everyday gaming & Discord voice comms | Audio enthusiast & Soundboard studio | 24/7 Cloud server (AWS / VPS) |
-| **Interface** | Minimalist Dark Slate (`520x760px`) | Full Multitab Studio (`920x840px`) | Headless Terminal / Daemon |
-| **Mic Booster** | ✅ 0 to +36 dB (~63x amplification) | ✅ 0 to +36 dB with Vocal EQ | ❌ None (Audio Bot only) |
-| **Soft-Knee Limiter** | ✅ Peak clamp at -0.1 dBFS | ✅ Peak clamp at -0.1 dBFS | ❌ None |
-| **Discord Music Bot** | ✅ 48kHz Stereo Opus direct streaming | ❌ Unattached | ✅ Full background daemon |
-| **Favorite Music** | ✅ 1-click star bookmarking & queue | ❌ None | ❌ None |
-| **Soundboard** | ❌ None (Clean & compact) | ✅ 8-slot polyphonic + Hotkeys | ✅ CLI trigger (`sb <name>`) |
-| **Session Persistence**| ✅ Auto-saves devices, gain & favs | ❌ Session-only | ✅ Token config |
-| **One-Click Launcher** | `run_lite.bat` | `run.bat` | `run_bot.bat` |
+A low-latency audio utility and Discord Hi-Fi voice streaming bot built with Python.
 
 ---
 
-## ✨ Features Breakdown
+## Fitur Utama
 
-### 1. 🎤 Real-Time Microphone Booster (Lite & Original)
-- **High-Dynamic Gain:** Clean, click-free software amplification from `0.0 dB` up to `+36.0 dB` (~63x linear amplification).
-- **Master Soft-Knee Limiter:** Dynamic saturation curve with an absolute ceiling at `-0.1 dBFS` prevents digital clipping and ear-piercing distortion.
-- **Hardware Agnostic:** Automatically enumerates and binds to any input and output audio device (e.g. physical microphones, USB headsets, or Virtual Audio Cables).
-- **Session Persistence (Lite):** Automatically remembers your selected input device, output device, gain setting, and toggle states across restarts.
-
-### 2. 🤖 Discord Hi-Fi Voice Bot (Lite & Headless)
-- **Studio 48kHz Opus Streaming:** Direct in-memory UDP streaming straight to Discord voice channels at native 48,000 Hz stereo Opus quality.
-- **Zero Echo / Noise Suppression Cutoff:** Completely bypasses Discord Krisp and noise-cancellation filtering for crystal-clear music playback.
-- **Universal Streaming Support:** Plays directly from YouTube, YouTube Music (`music.youtube.com`), and direct audio streams via `yt-dlp` without local file saving.
-- **Discord Slash Commands (/):** Control the bot directly from any Discord text channel:
-  - `/play <title or url>` — Play or enqueue music with automatic track resolution.
-  - `/skip` — Skip the active song and seamlessly transition to the next queued track.
-  - `/queue` — View the upcoming song queue and requesters.
-  - `/join` — Summon the bot to your current voice channel.
-  - `/leave` — Disconnect the bot from voice.
-  - `/stop` — Stop audio playback.
-
-### 3. ⭐ Favorite Music System (Woeyyy Lite)
-- **1-Click Star Bookmarking:** Click the ⭐ Star button to bookmark the currently streaming track or any typed song title/URL.
-- **Automatic Metadata Resolution:** Resolves real track titles and canonical URLs in the background before saving (no ugly raw URLs in your list).
-- **Quick Queue (`+ Queue`):** Enqueues your favorite track into the bot's queue with one click without interrupting or cutting off the song currently playing.
-- **Persistent Storage:** Stored in `.lite_config.json` so your favorite songs are always ready when you launch the app.
-
-### 4. 🛡️ Kernel-Level Security & Single-Instance Lock
-- **Windows Named Mutex:** Uses `Local\Woeyyy_Audio_Suite_SingleInstance_Mutex` to ensure strictly one active audio session runs at a time, preventing PortAudio hardware conflicts and duplicate Discord Gateway sessions.
-- **Automatic Window Recovery:** Launching a second instance automatically brings the already running application window to the foreground.
-- **SSRF & Dangerous Protocol Protection:** Automatically blocks streaming attempts targeting loopback addresses (`127.0.0.1`, `localhost`), private subnets (`10.0.0.0/8`, `192.168.0.0/16`), cloud metadata endpoints (`169.254.169.254`), and unsafe protocols (`file://`, `pipe:`, `concat:`).
-- **Windows ACL Token Hardening:** Discord token storage permissions are locked via Windows `icacls`, restricting read and write access exclusively to the active user account.
+- **Microphone Booster:** Software amplification (+0 dB s.d. +36 dB) dengan dynamic soft-knee limiter (-0.1 dBFS ceiling).
+- **Discord Voice Bot:** 48kHz Stereo Opus direct playback dengan slash commands (`/play`, `/skip`, `/queue`, dll).
+- **Favorite Music (Lite):** Bookmark dan antrekan lagu favorit dengan 1 klik.
+- **Headless Cloud Daemon:** Mode background service untuk server Ubuntu / AWS EC2.
 
 ---
 
-## 🚀 Quick Start
+## Pilihan Mode
 
-### 1. Prerequisites
-- **Operating System:** Windows 10/11 (or Ubuntu 22.04+ for Headless Bot).
-- **Python:** Python 3.10 to 3.14.
+| Mode | Deskripsi | Perintah Menjalankan |
+|---|---|---|
+| **Woeyyy Lite** | Aplikasi desktop compact (Mic Boost + Discord Bot) | `.\run_lite.bat` atau `python main.py --lite` |
+| **Woeyyy Full** | Studio lengkap (Mic Boost + Soundboard + Vocal EQ) | `.\run.bat` atau `python main.py` |
+| **Headless Bot** | Mode terminal tanpa GUI (Server Linux 24/7) | `python main.py --bot` atau `python bot_cli.py --daemon` |
 
-### 2. Installation
-Clone the repository and install dependencies:
+---
 
+## Menjalankan di Lokal (Windows)
+
+### 1. Prasyarat
+- Windows 10 / 11
+- Python 3.10 s.d. 3.14
+
+### 2. Instalasi
 ```powershell
 git clone https://github.com/dewanto-ar/woeyyy-audio.git
 cd woeyyy-audio
 
-# Create and activate virtual environment
+# Buat dan aktifkan virtual environment
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 
-# Install dependencies
+# Install dependency
 pip install -r requirements.txt
 ```
 
-### 3. Running Woeyyy
+### 3. Konfigurasi Token Discord
+Simpan token bot Discord via terminal:
+```powershell
+python main.py --set-token "TOKEN_DISCORD_KAMU"
+```
+*(Atau buat file `.env` di folder project dengan isi `DISCORD_BOT_TOKEN=TOKEN_DISCORD_KAMU`)*
 
-Choose the launcher that matches your desired mode:
+### 4. Menjalankan Aplikasi
+Pilih salah satu sesuai mode yang diinginkan:
+```powershell
+# Versi Lite (Rekomendasi untuk sehari-hari)
+.\run_lite.bat
 
-- **Woeyyy Lite (Compact & Modern):**
-  ```powershell
-  .\run_lite.bat
-  # or
-  python main.py --lite
-  ```
+# Versi Full Studio
+.\run.bat
 
-- **Woeyyy Original (Full Soundboard Suite):**
-  ```powershell
-  .\run.bat
-  # or
-  python main.py
-  ```
-
-- **Headless Discord Bot (Terminal Mode):**
-  ```powershell
-  .\run_bot.bat
-  # or
-  python main.py --bot
-  ```
-
-### 4. Configuring Discord Bot Token (Terminal or GUI)
-
-You can configure your Discord Bot Token using any of these convenient terminal methods:
-
-- **Quick Save via Terminal:**
-  ```powershell
-  python main.py --set-token "YOUR_DISCORD_BOT_TOKEN"
-  ```
-- **Pass Directly to Launcher:**
-  ```powershell
-  .\run_lite.bat --token "YOUR_DISCORD_BOT_TOKEN"
-  # or
-  python main.py --lite --token "YOUR_DISCORD_BOT_TOKEN"
-  ```
-- **Environment Variable:**
-  ```powershell
-  $env:DISCORD_BOT_TOKEN="YOUR_DISCORD_BOT_TOKEN"
-  ```
-- **Interactive Terminal Prompt:** If no token is saved, running `run_lite.bat` will prompt you directly in the terminal before launching the GUI.
+# Versi Terminal Bot
+.\run_bot.bat
+```
 
 ---
 
-## ☁️ 24/7 Cloud Deployment (AWS EC2 / Lightsail)
+## Menjalankan di Server (AWS EC2 / Ubuntu Linux)
 
-The Discord Voice Bot can be deployed on an AWS EC2 instance or Lightsail VPS to run 24/7 independently of your local computer:
-
-### 1. Install System Dependencies on Ubuntu
+### 1. Install Dependency Sistem
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3 python3-pip python3-venv git ffmpeg libopus0 libopus-dev
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv git ffmpeg libopus0 libopus-dev
 ```
 
-### 2. Setup Project & Minimal Bot Dependencies
+### 2. Setup Project
 ```bash
 git clone https://github.com/dewanto-ar/woeyyy-audio.git
 cd woeyyy-audio
@@ -143,8 +80,15 @@ source venv/bin/activate
 pip install -r requirements-bot.txt
 ```
 
-### 3. Run as a Systemd Service (Auto-Start on Boot)
-Copy the pre-configured [woeyyy-bot.service](woeyyy-bot.service) template:
+### 3. Konfigurasi Token & Cookies
+Buat file `.env` di dalam folder project:
+```bash
+echo "DISCORD_BOT_TOKEN=TOKEN_DISCORD_KAMU" > .env
+```
+*(Opsional: letakkan file `cookies.txt` di root folder project untuk mengatasi pembatasan login YouTube).*
+
+### 4. Menjalankan 24/7 dengan Systemd
+Pasang service agar bot otomatis berjalan di latar belakang dan otomatis aktif saat server boot:
 
 ```bash
 sudo cp woeyyy-bot.service /etc/systemd/system/
@@ -152,23 +96,48 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now woeyyy-bot
 ```
 
-Monitor live bot logs anytime:
+### 5. Manajemen Service
 ```bash
-journalctl -u woeyyy-bot -f
+# Cek status bot
+sudo systemctl status woeyyy-bot
+
+# Lihat log real-time
+sudo journalctl -u woeyyy-bot -f
+
+# Restart bot
+sudo systemctl restart woeyyy-bot
+
+# Hentikan bot
+sudo systemctl stop woeyyy-bot
 ```
 
 ---
 
-## 🧪 Automated Testing
+## Slash Commands Discord
 
-Run the test suite to verify DSP processing, audio normalization, security sanitization, and favorite track CRUD:
+| Perintah | Deskripsi |
+|---|---|
+| `/play <judul/url>` | Putar lagu dari YouTube / YouTube Music atau tambahkan ke antrean |
+| `/skip` | Lewati lagu yang sedang diputar |
+| `/pause` | Jeda pemutaran lagu |
+| `/resume` | Lanjutkan lagu yang dijeda |
+| `/queue` | Lihat daftar antrean lagu |
+| `/clear` | Kosongkan seluruh antrean lagu |
+| `/stop` | Hentikan pemutaran dan bersihkan antrean |
+| `/join` | Sambungkan bot ke voice channel |
+| `/leave` | Keluarkan bot dari voice channel |
+| `/volume <persen>` | Atur volume suara bot (0 - 150%) |
 
+---
+
+## Automated Testing
+
+Jalankan test suite untuk memverifikasi fungsionalitas audio processing, sanitasi URL, dan bot:
 ```powershell
 python -m unittest discover tests
 ```
 
 ---
 
-## 📄 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
+## Lisensi
+MIT License

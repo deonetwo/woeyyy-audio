@@ -1,13 +1,15 @@
 [Unit]
 Description=Woeyyy Discord Hi-Fi Voice Bot Daemon
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/woeyyy-audio
+Environment=PYTHONUNBUFFERED=1
 # Option A: specify token via environment variable
-Environment="DISCORD_BOT_TOKEN=YOUR_BOT_TOKEN_HERE"
+Environment=DISCORD_BOT_TOKEN=YOUR_BOT_TOKEN_HERE
 # Option B: or read token from .env file
 # EnvironmentFile=/home/ubuntu/woeyyy-audio/.env
 ExecStart=/home/ubuntu/woeyyy-audio/venv/bin/python bot_cli.py --daemon

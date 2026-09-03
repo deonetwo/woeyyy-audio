@@ -129,6 +129,11 @@ if os.path.exists(COOKIE_PATH):
     YTDL_OPTIONS["cookiefile"] = COOKIE_PATH
     YTDL_OPTIONS["remote_components"] = ["ejs:github"]
     YTDL_OPTIONS["format"] = "ba/b"
+    YTDL_OPTIONS["extractor_args"] = {
+        "youtube": {
+            "player_client": ["web"],
+        }
+    }
 
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",

@@ -351,22 +351,31 @@ class DiscordVoiceBot:
         @bot.tree.command(name="play", description="Putar lagu dari YouTube / YouTube Music atau tambahkan ke antrean")
         @app_commands.describe(query="Judul lagu, link YouTube, atau link YouTube Music")
         async def cmd_play(interaction: discord.Interaction, query: str):
-            # Auto-join if bot is not in a channel yet
-            if not self.voice_client or not self.voice_client.is_connected():
-                if interaction.user.voice and interaction.user.voice.channel:
-                    channel = interaction.user.voice.channel
-                    self.voice_client = await channel.connect(timeout=10.0, reconnect=True)
+            if not interaction.user.voice or not interaction.user.voice.channel:
+                await interaction.response.send_message(
+                    "⚠️ Kamu harus masuk ke salah satu Voice Channel dulu!",
+                    ephemeral=True,
+                )
+                return
+
+            # Always defer immediately within 50ms so Discord never times out!
+            await interaction.response.defer(ephemeral=False)
+
+            channel = interaction.user.voice.channel
+            try:
+                if not self.voice_client or not self.voice_client.is_connected():
+                    self.voice_client = await channel.connect(timeout=15.0, reconnect=True)
                     self.is_in_voice = True
                     self.current_channel_id = channel.id
                     self._notify_status("VOICE_CONNECTED", channel.name)
-                else:
-                    await interaction.response.send_message(
-                        "⚠️ Bot belum masuk Voice Channel! Masuk ke VC lalu jalankan `/join` atau `/play`.",
-                        ephemeral=True,
-                    )
-                    return
+                elif self.voice_client.channel.id != channel.id:
+                    await self.voice_client.move_to(channel)
+                    self.current_channel_id = channel.id
+            except Exception as e:
+                print(f"[DiscordBot] Error connecting to voice channel: {e}")
+                await interaction.followup.send(f"❌ Gagal tersambung ke Voice Channel: {e}")
+                return
 
-            await interaction.response.defer(ephemeral=False)
             self._notify_status("SEARCHING", f"Loading: {query[:35]}...")
 
             requester_name = interaction.user.display_name

@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 title Woeyyy Lite - Mic Boost ^& Discord Streamer
 cd /d "%~dp0"
 
@@ -59,8 +59,28 @@ echo.
 echo [*] Setup complete!
 
 :launch
+:: If user passes --token <TOKEN>, save it directly
+if "%~1"=="--token" (
+    if not "%~2"=="" (
+        python -c "from engine.discord_bot import save_token; save_token('%~2')" >nul 2>&1
+    )
+)
+
+:: If .env or DISCORD_BOT_TOKEN does not exist, give option to input token via terminal
+if not exist ".env" (
+    if "%DISCORD_BOT_TOKEN%"=="" (
+        echo.
+        echo [*] Discord Bot Token is not configured yet.
+        set /p USER_TOKEN="    Enter Discord Bot Token (or press Enter to set in GUI): "
+        if not "!USER_TOKEN!"=="" (
+            python -c "from engine.discord_bot import save_token; save_token('!USER_TOKEN!')" >nul 2>&1
+            echo [+] Token saved successfully to .env!
+        )
+    )
+)
+
 echo [*] Launching Woeyyy Lite...
-python gui_lite.py
+python gui_lite.py %*
 
 :: If the app exited with an error, keep console open for troubleshooting
 if errorlevel 1 (

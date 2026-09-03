@@ -24,7 +24,30 @@ def main():
         action="store_true",
         help="Run Woeyyy Lite (minimalist Mic Boost & on-demand Discord bot)",
     )
+    parser.add_argument(
+        "--token",
+        type=str,
+        default="",
+        help="Discord Bot Token (saves to .bot_config.json)",
+    )
+    parser.add_argument(
+        "--set-token",
+        type=str,
+        default="",
+        help="Quickly save Discord Bot Token from terminal and exit",
+    )
     args = parser.parse_args()
+
+    if args.set_token:
+        from engine.discord_bot import save_token, mask_token
+        save_token(args.set_token)
+        print(f"[+] Successfully saved Discord Bot Token: {mask_token(args.set_token)}")
+        sys.exit(0)
+
+    if args.token:
+        from engine.discord_bot import save_token, mask_token
+        save_token(args.token)
+        print(f"[*] Loaded Discord Bot Token: {mask_token(args.token)}")
 
     if args.bot:
         from bot_cli import main as run_bot_cli

@@ -102,6 +102,26 @@ Choose the launcher that matches your desired mode:
   python main.py --bot
   ```
 
+### 4. Configuring Discord Bot Token (Terminal or GUI)
+
+You can configure your Discord Bot Token using any of these convenient terminal methods:
+
+- **Quick Save via Terminal:**
+  ```powershell
+  python main.py --set-token "YOUR_DISCORD_BOT_TOKEN"
+  ```
+- **Pass Directly to Launcher:**
+  ```powershell
+  .\run_lite.bat --token "YOUR_DISCORD_BOT_TOKEN"
+  # or
+  python main.py --lite --token "YOUR_DISCORD_BOT_TOKEN"
+  ```
+- **Environment Variable:**
+  ```powershell
+  $env:DISCORD_BOT_TOKEN="YOUR_DISCORD_BOT_TOKEN"
+  ```
+- **Interactive Terminal Prompt:** If no token is saved, running `run_lite.bat` will prompt you directly in the terminal before launching the GUI.
+
 ---
 
 ## ☁️ 24/7 Cloud Deployment (AWS EC2 / Lightsail)

@@ -35,9 +35,6 @@ from engine.security import (
     is_safe_soundboard_path,
 )
 
-# Path to local token configuration
-CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".bot_config.json"))
-
 
 
 def ensure_opus_loaded() -> bool:
@@ -126,27 +123,90 @@ def normalize_youtube_url(query: str) -> str:
     return target
 
 
+ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".bot_config.json"))
+
+
 def load_saved_token() -> str:
-    """Load saved Discord Bot Token from local config file."""
+    """
+    Load Discord Bot Token with the following priority:
+    1. OS Environment variable: DISCORD_BOT_TOKEN
+    2. Local .env file
+    3. Legacy .bot_config.json (auto-migrates to .env)
+    """
+    # 1. Check OS Environment variable
+    tok = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+    if tok:
+        return tok
+
+    # 2. Check local .env file
+    if os.path.exists(ENV_PATH):
+        try:
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if line.startswith("DISCORD_BOT_TOKEN="):
+                        val = line.split("=", 1)[1].strip().strip("\"'")
+                        if val:
+                            os.environ["DISCORD_BOT_TOKEN"] = val
+                            return val
+        except Exception:
+            pass
+
+    # 3. Fallback & migration from legacy .bot_config.json
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get("bot_token", "")
+                legacy_tok = data.get("bot_token", "").strip()
+                if legacy_tok:
+                    save_token(legacy_tok)
+                    try:
+                        os.remove(CONFIG_PATH)
+                    except Exception:
+                        pass
+                    return legacy_tok
         except Exception:
             pass
+
     return ""
 
 
 def save_token(token: str):
-    """Save Discord Bot Token to local config file and lock ACL permissions."""
+    """
+    Save Discord Bot Token to OS environment and persistent .env file.
+    Secures file permissions via secure_file_permissions.
+    """
+    cleaned = token.strip().strip("\"'")
+    os.environ["DISCORD_BOT_TOKEN"] = cleaned
     try:
-        data = {"bot_token": token.strip()}
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        secure_file_permissions(CONFIG_PATH)
+        lines = []
+        found = False
+        if os.path.exists(ENV_PATH):
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            for i, line in enumerate(lines):
+                if line.strip().startswith("DISCORD_BOT_TOKEN="):
+                    lines[i] = f"DISCORD_BOT_TOKEN={cleaned}\n"
+                    found = True
+                    break
+        if not found:
+            lines.append(f"DISCORD_BOT_TOKEN={cleaned}\n")
+
+        with open(ENV_PATH, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+        secure_file_permissions(ENV_PATH)
+
+        # Remove legacy .bot_config.json if it exists
+        if os.path.exists(CONFIG_PATH):
+            try:
+                os.remove(CONFIG_PATH)
+            except Exception:
+                pass
     except Exception as e:
-        print(f"[DiscordBot] Failed to save token: {e}")
+        print(f"[DiscordBot] Failed to save token to .env: {e}")
 
 
 def resolve_song_info(query_or_url: str) -> Tuple[bool, str, str]:

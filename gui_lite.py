@@ -1249,6 +1249,17 @@ class WoeyyyLiteApp(ctk.CTk):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Woeyyy Lite")
+    parser.add_argument("--token", type=str, default="", help="Discord Bot Token (saves to .bot_config.json)")
+    args, _ = parser.parse_known_args()
+
+    if args.token:
+        save_token(args.token)
+        print(f"[*] Discord Bot Token saved: {mask_token(args.token)}")
+    elif os.environ.get("DISCORD_BOT_TOKEN") and not load_saved_token():
+        save_token(os.environ["DISCORD_BOT_TOKEN"])
+
     lock = SingleInstanceLock()
     if not lock.acquire():
         print("[Security] Another session of Woeyyy is already running. Switching focus to active window...")

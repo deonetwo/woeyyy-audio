@@ -8,7 +8,8 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/woeyyy-audio
 # Option A: specify token via environment variable
 Environment="DISCORD_BOT_TOKEN=YOUR_BOT_TOKEN_HERE"
-# Option B: or place token inside .bot_config.json in the working directory
+# Option B: or read token from .env file
+# EnvironmentFile=/home/ubuntu/woeyyy-audio/.env
 ExecStart=/home/ubuntu/woeyyy-audio/venv/bin/python bot_cli.py --daemon
 Restart=always
 RestartSec=5

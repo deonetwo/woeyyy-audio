@@ -26,7 +26,7 @@ class TestDiscordVoiceBot(unittest.TestCase):
         self.assertTrue(FFMPEG_EXECUTABLE.endswith(".exe"))
 
     def test_token_save_and_load(self):
-        """Verify token persistence in .bot_config.json."""
+        """Verify token persistence in .env and DISCORD_BOT_TOKEN."""
         dummy_token = "TEST_DISCORD_TOKEN_12345"
         save_token(dummy_token)
         loaded = load_saved_token()

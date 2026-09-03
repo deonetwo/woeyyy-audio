@@ -100,9 +100,9 @@ def get_ffmpeg_binary() -> str:
 # Global FFmpeg binary path
 FFMPEG_EXECUTABLE = get_ffmpeg_binary()
 
-# YTDL options for fast, resilient audio stream extraction (supports YouTube Music, Mobile, & Web)
+# YTDL options for fast, resilient audio stream extraction (bypasses datacenter bot blocks)
 YTDL_OPTIONS = {
-    "format": "ba/b/18",
+    "format": "bestaudio/best",
     "extractaudio": True,
     "audioformat": "opus",
     "outtmpl": "%(extractor)s-%(id)s-%(title)s.%(ext)s",
@@ -117,7 +117,8 @@ YTDL_OPTIONS = {
     "source_address": "0.0.0.0",
     "extractor_args": {
         "youtube": {
-            "player_client": ["android", "ios", "web"],
+            "player_client": ["android_music", "android", "tv_embedded", "ios"],
+            "player_skip": ["web", "mweb"],
         }
     },
 }

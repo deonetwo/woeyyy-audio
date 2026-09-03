@@ -131,7 +131,7 @@ if os.path.exists(COOKIE_PATH):
     YTDL_OPTIONS["format"] = "ba/b"
     YTDL_OPTIONS["extractor_args"] = {
         "youtube": {
-            "player_client": ["web"],
+            "player_client": ["web", "web_embedded", "mweb"],
         }
     }
 

@@ -377,9 +377,9 @@ class DiscordVoiceBot:
                 return
 
             # Send immediate feedback so Discord's "Woeyyy is thinking..." disappears in 0.1s!
-            msg_handle = await interaction.followup.send(f"Searching for `{query[:60]}`...")
+            msg_handle = await interaction.followup.send("Searching...")
 
-            self._notify_status("SEARCHING", f"Loading: {query[:35]}...")
+            self._notify_status("SEARCHING", "Searching for track...")
 
             requester_name = interaction.user.display_name
             success, msg, is_queued, track = await self._async_enqueue_or_play(query, requester=requester_name)
@@ -734,12 +734,12 @@ class DiscordVoiceBot:
             if "entries" in data:
                 entries = [e for e in data["entries"] if e]
                 if not entries:
-                    return False, f"Lagu tidak ditemukan: `{query_or_url}`", False, {}
+                    return False, "Track not found.", False, {}
                 data = entries[0]
 
             stream_url = data.get("url")
             if not stream_url:
-                return False, "Tidak dapat mengekstrak stream audio", False, {}
+                return False, "Could not extract audio stream.", False, {}
 
             title = data.get("title", query_or_url)
             uploader = data.get("uploader") or data.get("channel") or data.get("artist") or ""

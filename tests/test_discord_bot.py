@@ -28,10 +28,16 @@ class TestDiscordVoiceBot(unittest.TestCase):
 
     def test_token_save_and_load(self):
         """Verify token persistence in .env and DISCORD_BOT_TOKEN."""
-        dummy_token = "TEST_DISCORD_TOKEN_12345"
-        save_token(dummy_token)
-        loaded = load_saved_token()
-        self.assertEqual(dummy_token, loaded)
+        orig_token = load_saved_token()
+        try:
+            dummy_token = "TEST_DISCORD_TOKEN_12345"
+            save_token(dummy_token)
+            loaded = load_saved_token()
+            self.assertEqual(dummy_token, loaded)
+        finally:
+            if orig_token:
+                save_token(orig_token)
+
 
     def test_bot_controller_init(self):
         """Verify DiscordVoiceBot initial state and parameters."""
@@ -75,6 +81,57 @@ class TestDiscordVoiceBot(unittest.TestCase):
         self.assertEqual(cleared, 2)
         self.assertEqual(len(bot.get_queue()), 0)
 
+    def test_autocomplete_direct_url_and_empty(self):
+        """Verify direct URLs and empty queries in autocomplete."""
+        import asyncio
+        from engine.discord_bot import async_search_youtube_suggestions
+
+        # Empty query
+        res_empty = asyncio.run(async_search_youtube_suggestions(""))
+        self.assertEqual(res_empty, [])
+
+        # Direct URL query
+        test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        res_url = asyncio.run(async_search_youtube_suggestions(test_url))
+        self.assertEqual(len(res_url), 1)
+        self.assertEqual(res_url[0]["value"], test_url)
+        self.assertTrue(res_url[0]["name"].startswith("🔗"))
+        self.assertLessEqual(len(res_url[0]["name"]), 100)
+
+    def test_autocomplete_live_query_and_formatting(self):
+        """Verify live YouTube autocomplete returns formatted choices <= 100 chars."""
+        import asyncio
+        from engine.discord_bot import async_search_youtube_suggestions
+
+        res = asyncio.run(async_search_youtube_suggestions("test", max_results=5))
+        self.assertIsInstance(res, list)
+        self.assertGreater(len(res), 0)
+        for item in res:
+            self.assertIn("name", item)
+            self.assertIn("value", item)
+            self.assertLessEqual(len(item["name"]), 100)
+            self.assertTrue(item["name"].startswith("🎵") or item["name"].startswith("🔍"))
+
+    def test_bot_autocomplete_caching(self):
+        """Verify DiscordVoiceBot in-memory TTL caching for autocomplete."""
+        import asyncio
+        bot = DiscordVoiceBot()
+        self.assertEqual(len(bot._autocomplete_cache), 0)
+
+        # First lookup populates cache
+        res1 = asyncio.run(bot.get_autocomplete_suggestions("test"))
+        self.assertIn("test", bot._autocomplete_cache)
+        self.assertEqual(len(bot._autocomplete_cache), 1)
+
+        # Second lookup returns cached items instantly
+        res2 = asyncio.run(bot.get_autocomplete_suggestions("test"))
+        self.assertEqual(res1, res2)
+
+        if bot._http_session and not bot._http_session.closed:
+            asyncio.run(bot._http_session.close())
+
+
 
 if __name__ == "__main__":
     unittest.main()
+

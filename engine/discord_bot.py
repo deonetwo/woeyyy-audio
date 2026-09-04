@@ -11,15 +11,18 @@ Features:
 """
 
 import asyncio
+import html
 import json
 import os
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import warnings
 from typing import Callable, Dict, List, Optional, Tuple
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -151,6 +154,148 @@ def normalize_youtube_url(query: str) -> str:
     if "music.youtube.com" in target:
         target = target.replace("music.youtube.com", "www.youtube.com")
     return target
+
+
+async def async_search_youtube_suggestions(
+    query: str,
+    session: Optional[aiohttp.ClientSession] = None,
+    max_results: int = 15,
+) -> List[Dict[str, str]]:
+    """
+    Asynchronously query YouTube's search endpoint to fetch matching video suggestions
+    for Discord slash command autocompletion.
+
+    Returns a list of dicts: [{"name": display_name, "value": direct_url}]
+    where name is formatted as '🎵 Channel - Title' (clamped to <= 100 chars) and value is the watch URL.
+    """
+    clean = query.strip()
+    if not clean:
+        return []
+
+    # If the user is pasting a direct URL, suggest playing the URL directly
+    if clean.startswith("http://") or clean.startswith("https://"):
+        url_label = clean
+        if len(url_label) > 90:
+            url_label = url_label[:87] + "..."
+        return [{"name": f"🔗 {url_label}", "value": clean}]
+
+    items: List[Dict[str, str]] = []
+    own_session = False
+    if session is None or session.closed:
+        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2.0))
+        own_session = True
+
+    try:
+        # Primary search: YouTube Innertube search endpoint (returns exact video title + channel)
+        url = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false"
+        payload = {
+            "context": {
+                "client": {
+                    "clientName": "WEB",
+                    "clientVersion": "2.20240101.00.00",
+                    "hl": "en",
+                    "gl": "US",
+                }
+            },
+            "query": clean,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+        }
+        async with session.post(url, json=payload, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                sec_contents = (
+                    data.get("contents", {})
+                    .get("twoColumnSearchResultsRenderer", {})
+                    .get("primaryContents", {})
+                    .get("sectionListRenderer", {})
+                    .get("contents", [])
+                )
+                for sec in sec_contents:
+                    item_sec = sec.get("itemSectionRenderer", {})
+                    for item in item_sec.get("contents", []):
+                        v = item.get("videoRenderer")
+                        if not v:
+                            continue
+                        vid = v.get("videoId")
+                        if not vid:
+                            continue
+
+                        # Extract title
+                        title_runs = v.get("title", {}).get("runs", [])
+                        if title_runs:
+                            title = "".join(r.get("text", "") for r in title_runs)
+                        else:
+                            title = v.get("title", {}).get("simpleText", "")
+
+                        # Extract uploader/channel
+                        owner_runs = v.get("ownerText", {}).get("runs", [])
+                        if owner_runs:
+                            owner = "".join(r.get("text", "") for r in owner_runs)
+                        else:
+                            owner = ""
+
+                        title = html.unescape(title).strip()
+                        owner = html.unescape(owner).strip()
+
+                        if not title:
+                            continue
+
+                        # Format label: '🎵 Channel - Title' or '🎵 Title'
+                        if owner:
+                            label = f"🎵 {owner} - {title}"
+                        else:
+                            label = f"🎵 {title}"
+
+                        # Discord hard limit: Choice.name must be <= 100 characters
+                        if len(label) > 100:
+                            label = label[:97] + "..."
+
+                        val = f"https://www.youtube.com/watch?v={vid}"
+                        items.append({"name": label, "value": val})
+                        if len(items) >= max_results:
+                            break
+                    if len(items) >= max_results:
+                        break
+    except Exception:
+        pass
+
+    # Secondary fallback: YouTube suggest queries endpoint if Innertube is empty
+    if not items:
+        try:
+            suggest_url = (
+                f"https://suggestqueries.google.com/complete/search"
+                f"?client=youtube&ds=yt&q={urllib.parse.quote_plus(clean)}"
+            )
+            async with session.get(suggest_url) as resp:
+                if resp.status == 200:
+                    text = await resp.text()
+                    start = text.find("(")
+                    end = text.rfind(")")
+                    if start != -1 and end != -1:
+                        data = json.loads(text[start + 1 : end])
+                        if len(data) > 1 and isinstance(data[1], list):
+                            for s_item in data[1]:
+                                s_text = s_item[0] if isinstance(s_item, list) else str(s_item)
+                                s_label = f"🔍 {s_text}"
+                                if len(s_label) > 100:
+                                    s_label = s_label[:97] + "..."
+                                items.append({"name": s_label, "value": s_text})
+                                if len(items) >= max_results:
+                                    break
+        except Exception:
+            pass
+
+    if own_session and not session.closed:
+        await session.close()
+
+    return items
+
 
 
 ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
@@ -296,7 +441,44 @@ class DiscordVoiceBot:
         self.available_channels: List[Tuple[str, int]] = []  # [(Display Name, channel_id)]
         self.current_channel_id: Optional[int] = None
 
+        self._autocomplete_cache: Dict[str, Tuple[float, List[Dict[str, str]]]] = {}
+        self._http_session: Optional[aiohttp.ClientSession] = None
+
         self.ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
+
+    async def _get_http_session(self) -> aiohttp.ClientSession:
+        """Get or lazily create a persistent aiohttp.ClientSession for the bot loop."""
+        if self._http_session is None or self._http_session.closed:
+            self._http_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=2.0)
+            )
+        return self._http_session
+
+    async def get_autocomplete_suggestions(self, query: str) -> List[Dict[str, str]]:
+        """
+        Fetch autocomplete suggestions with an in-memory TTL cache (5 minutes).
+        Ensures ultra-fast 0ms responses for repeated queries or backspaces.
+        """
+        clean = query.strip()
+        if not clean:
+            return []
+
+        cache_key = clean.lower()
+        now = time.time()
+        if cache_key in self._autocomplete_cache:
+            cached_time, cached_items = self._autocomplete_cache[cache_key]
+            if now - cached_time < 300.0:
+                return cached_items
+
+        session = await self._get_http_session()
+        items = await async_search_youtube_suggestions(clean, session=session, max_results=15)
+
+        # Prune cache if it grows beyond 300 items
+        if len(self._autocomplete_cache) > 300:
+            self._autocomplete_cache.clear()
+
+        self._autocomplete_cache[cache_key] = (now, items)
+        return items
 
     def _notify_status(self, status: str, detail: str = ""):
         """Notify GUI thread of connection/voice status update."""
@@ -406,6 +588,20 @@ class DiscordVoiceBot:
                 await msg_handle.edit(
                     content=f"Added {link_part}{uploader_part}{dur_part} to begin playing."
                 )
+
+        @cmd_play.autocomplete("query")
+        async def play_autocomplete(
+            interaction: discord.Interaction,
+            current: str,
+        ) -> List[app_commands.Choice[str]]:
+            if not current or not current.strip():
+                return []
+
+            suggestions = await self.get_autocomplete_suggestions(current)
+            return [
+                app_commands.Choice(name=item["name"], value=item["value"])
+                for item in suggestions[:25]
+            ]
 
         @bot.tree.command(name="skip", description="Lewati lagu yang sedang diputar dan putar lagu berikutnya di antrean")
         async def cmd_skip(interaction: discord.Interaction):
@@ -611,6 +807,9 @@ class DiscordVoiceBot:
                     t.cancel()
                 if pending:
                     self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                if self._http_session and not self._http_session.closed:
+                    self._loop.run_until_complete(self._http_session.close())
+                    self._http_session = None
                 self._loop.run_until_complete(self._loop.shutdown_asyncgens())
                 # Allow aiohttp connectors a brief moment to finish graceful teardown
                 self._loop.run_until_complete(asyncio.sleep(0.25))
@@ -630,6 +829,9 @@ class DiscordVoiceBot:
                     await self.voice_client.disconnect(force=True)
                 if self.client:
                     await self.client.close()
+                if self._http_session and not self._http_session.closed:
+                    await self._http_session.close()
+                    self._http_session = None
                 await asyncio.sleep(0.25)
             except Exception as e:
                 print(f"[DiscordBot] Error during stop: {e}")

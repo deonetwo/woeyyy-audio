@@ -480,6 +480,69 @@ class DiscordVoiceBot:
         self._autocomplete_cache[cache_key] = (now, items)
         return items
 
+    async def _ensure_voice_connected(self, channel: discord.VoiceChannel) -> discord.VoiceClient:
+        """
+        Connect or move to the given voice channel with automatic recovery from
+        stale/zombie voice connections and 'Already connected' errors after prolonged inactivity.
+        """
+        guild = channel.guild
+        guild_vc: Optional[discord.VoiceClient] = getattr(guild, "voice_client", None)
+
+        # 1. If guild already has an actively connected voice client
+        if guild_vc and guild_vc.is_connected():
+            self.voice_client = guild_vc
+            if guild_vc.channel.id != channel.id:
+                await guild_vc.move_to(channel)
+            self.is_in_voice = True
+            self.current_channel_id = channel.id
+            self._notify_status("VOICE_CONNECTED", channel.name)
+            return guild_vc
+
+        # 2. If a stale/zombie voice client exists (disconnected socket, timeout, or gateway drop)
+        if guild_vc:
+            try:
+                await guild_vc.disconnect(force=True)
+            except Exception:
+                pass
+            await asyncio.sleep(0.3)
+
+        if self.voice_client and self.voice_client != guild_vc:
+            try:
+                await self.voice_client.disconnect(force=True)
+            except Exception:
+                pass
+            await asyncio.sleep(0.2)
+
+        # 3. Connect to the voice channel with resilience against discord.ClientException
+        try:
+            vc = await channel.connect(timeout=15.0, reconnect=True)
+        except discord.ClientException as e:
+            if "Already connected" in str(e):
+                stale_vc = getattr(guild, "voice_client", None)
+                if stale_vc:
+                    if stale_vc.is_connected():
+                        self.voice_client = stale_vc
+                        if stale_vc.channel.id != channel.id:
+                            await stale_vc.move_to(channel)
+                        self.is_in_voice = True
+                        self.current_channel_id = channel.id
+                        self._notify_status("VOICE_CONNECTED", channel.name)
+                        return stale_vc
+                    try:
+                        await stale_vc.disconnect(force=True)
+                    except Exception:
+                        pass
+                await asyncio.sleep(0.5)
+                vc = await channel.connect(timeout=15.0, reconnect=True)
+            else:
+                raise
+
+        self.voice_client = vc
+        self.is_in_voice = True
+        self.current_channel_id = channel.id
+        self._notify_status("VOICE_CONNECTED", channel.name)
+        return vc
+
     def _notify_status(self, status: str, detail: str = ""):
         """Notify GUI thread of connection/voice status update."""
         if self.on_status_change:
@@ -519,16 +582,12 @@ class DiscordVoiceBot:
             channel = interaction.user.voice.channel
             await interaction.response.defer(ephemeral=False)
 
-            if self.voice_client and self.voice_client.is_connected():
-                if self.voice_client.channel.id != channel.id:
-                    await self.voice_client.move_to(channel)
-            else:
-                self.voice_client = await channel.connect(timeout=10.0, reconnect=True)
-
-            self.is_in_voice = True
-            self.current_channel_id = channel.id
-            self._notify_status("VOICE_CONNECTED", channel.name)
-            await interaction.followup.send(f"Connected to `#{channel.name}`.")
+            try:
+                await self._ensure_voice_connected(channel)
+                await interaction.followup.send(f"Connected to `#{channel.name}`.")
+            except Exception as e:
+                print(f"[DiscordBot] Error connecting to voice channel: {e}")
+                await interaction.followup.send(f"Failed to connect to voice channel: {e}")
 
         @bot.tree.command(name="play", description="Putar lagu dari YouTube / YouTube Music atau tambahkan ke antrean")
         @app_commands.describe(query="Judul lagu, link YouTube, atau link YouTube Music")
@@ -545,14 +604,7 @@ class DiscordVoiceBot:
 
             channel = interaction.user.voice.channel
             try:
-                if not self.voice_client or not self.voice_client.is_connected():
-                    self.voice_client = await channel.connect(timeout=15.0, reconnect=True)
-                    self.is_in_voice = True
-                    self.current_channel_id = channel.id
-                    self._notify_status("VOICE_CONNECTED", channel.name)
-                elif self.voice_client.channel.id != channel.id:
-                    await self.voice_client.move_to(channel)
-                    self.current_channel_id = channel.id
+                await self._ensure_voice_connected(channel)
             except Exception as e:
                 print(f"[DiscordBot] Error connecting to voice channel: {e}")
                 await interaction.followup.send(f"Failed to connect to voice channel: {e}")
@@ -714,16 +766,15 @@ class DiscordVoiceBot:
             app_commands.Choice(name="⚡ Laser", value="laser"),
         ])
         async def cmd_soundboard(interaction: discord.Interaction, sound: app_commands.Choice[str]):
-            if not self.voice_client or not self.voice_client.is_connected():
-                if interaction.user.voice and interaction.user.voice.channel:
-                    channel = interaction.user.voice.channel
-                    self.voice_client = await channel.connect(timeout=10.0, reconnect=True)
-                    self.is_in_voice = True
-                    self.current_channel_id = channel.id
-                    self._notify_status("VOICE_CONNECTED", channel.name)
-                else:
-                    await interaction.response.send_message("⚠️ Bot harus berada di Voice Channel terlebih dahulu!", ephemeral=True)
-                    return
+            if not interaction.user.voice or not interaction.user.voice.channel:
+                await interaction.response.send_message("⚠️ Kamu harus berada di Voice Channel terlebih dahulu!", ephemeral=True)
+                return
+
+            try:
+                await self._ensure_voice_connected(interaction.user.voice.channel)
+            except Exception as e:
+                await interaction.response.send_message(f"Failed to connect to voice channel: {e}", ephemeral=True)
+                return
 
             sounds_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sounds"))
             file_path = os.path.join(sounds_dir, f"{sound.value}.wav")
@@ -740,7 +791,8 @@ class DiscordVoiceBot:
 
         @bot.tree.command(name="leave", description="Keluarkan bot dari Voice Channel")
         async def cmd_leave(interaction: discord.Interaction):
-            if self.voice_client and self.voice_client.is_connected():
+            guild_vc = getattr(interaction.guild, "voice_client", None) if interaction.guild else None
+            if (self.voice_client and self.voice_client.is_connected()) or guild_vc:
                 self.leave_voice_channel()
                 await interaction.response.send_message("Disconnected from voice channel.")
             else:
@@ -784,12 +836,20 @@ class DiscordVoiceBot:
             if member == self.client.user:
                 if after.channel is None:
                     self.is_in_voice = False
+                    if before and before.channel and hasattr(before.channel, "guild"):
+                        g_vc = getattr(before.channel.guild, "voice_client", None)
+                        if g_vc:
+                            try:
+                                await g_vc.disconnect(force=True)
+                            except Exception:
+                                pass
                     self.voice_client = None
                     self.current_channel_id = None
                     self._notify_status("VOICE_DISCONNECTED", "Left voice channel")
                 else:
                     self.is_in_voice = True
                     self.current_channel_id = after.channel.id
+                    self.voice_client = getattr(after.channel.guild, "voice_client", None)
                     self._notify_status("VOICE_CONNECTED", after.channel.name)
 
         try:
@@ -878,29 +938,42 @@ class DiscordVoiceBot:
                 self._notify_status("ERROR", "Channel not found")
                 return
 
-            if self.voice_client and self.voice_client.is_connected():
-                if self.voice_client.channel.id == channel_id:
-                    return
-                await self.voice_client.move_to(channel)
-            else:
-                self.voice_client = await channel.connect(timeout=10.0, reconnect=True)
-
-            self.is_in_voice = True
-            self.current_channel_id = channel_id
-            self._notify_status("VOICE_CONNECTED", channel.name)
+            try:
+                await self._ensure_voice_connected(channel)
+            except Exception as e:
+                print(f"[DiscordBot] Error joining voice channel: {e}")
+                self._notify_status("ERROR", str(e))
 
         asyncio.run_coroutine_threadsafe(_async_join(), self._loop)
 
     def leave_voice_channel(self):
         """Disconnect the bot from its current voice channel."""
-        if not self.voice_client or not self._loop:
+        if not self._loop:
             return
 
         async def _async_leave():
-            if self.voice_client and self.voice_client.is_connected():
-                if self.voice_client.is_playing():
-                    self.voice_client.stop()
-                await self.voice_client.disconnect(force=True)
+            vc = self.voice_client
+            if not vc and self.client and self.current_channel_id:
+                ch = self.client.get_channel(self.current_channel_id)
+                if ch and hasattr(ch, "guild"):
+                    vc = getattr(ch.guild, "voice_client", None)
+
+            # Also force-disconnect any active voice clients tracked by client
+            if not vc and self.client:
+                for active_vc in getattr(self.client, "voice_clients", []):
+                    try:
+                        await active_vc.disconnect(force=True)
+                    except Exception:
+                        pass
+
+            if vc:
+                try:
+                    if vc.is_playing():
+                        vc.stop()
+                    await vc.disconnect(force=True)
+                except Exception:
+                    pass
+
             self.is_in_voice = False
             self.voice_client = None
             self.current_channel_id = None
